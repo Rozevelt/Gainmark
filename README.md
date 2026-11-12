@@ -6,8 +6,7 @@ workouts to beat them, and follow your progress in Statistics.
 Made by Rasmus Brunila ([@Rozevelt](https://github.com/Rozevelt)).
 
 > **Built with AI.** The code in this project was written by AI ([Claude](https://claude.com/claude-code)
-> by Anthropic), not by hand. Rasmus came up with the app, decided what it should do and how it should
-> look, and tested it at the gym; the AI did the programming.
+> by Anthropic), not by hand.
 
 ## Install (Android)
 
