@@ -20,7 +20,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.gainmark.app"
+      "package": "com.gainmark.app",
+      "versionCode": 1
     },
     "web": {
       "output": "single",
@@ -33,7 +34,7 @@
         {
           "backgroundColor": "#121212",
           "image": "./assets/images/splash-icon.png",
-          "imageWidth": 220
+          "imageWidth": 288
         }
       ],
       "expo-sharing",
@@ -45,7 +46,8 @@
         }
       ],
       "expo-status-bar",
-      "expo-web-browser"
+      "expo-web-browser",
+      "./plugins/with-release-signing.js"
     ],
     "experiments": {
       "typedRoutes": true,

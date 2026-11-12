@@ -1,9 +1,9 @@
-import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { View } from 'react-native';
+import { Linking, View } from 'react-native';
 
 import { NavRow, Row, Section, SettingsPage, settingsStyles } from '@/components/settings-ui';
 import { Text } from '@/components/text';
+import { appVersion, checkForUpdateNow, REPO_URL } from '@/lib/updates';
 import { DEFAULT_BACKUP, DEFAULT_REST, DEFAULT_THEME, DEFAULT_TIMER, useGoal, useStore } from '@/store/store';
 import { ACCENTS, useColors } from '@/theme';
 
@@ -71,7 +71,14 @@ export default function SettingsScreen() {
       </Section>
 
       <Section title="ABOUT">
-        <Row label="Gainmark" value={`v${Constants.expoConfig?.version ?? '1.0.0'}`} last />
+        <Row label="Gainmark" value={`v${appVersion()}`} />
+        <NavRow label="Check for updates" onPress={checkForUpdateNow} />
+        <NavRow
+          label="Gainmark on GitHub"
+          sub="github.com/Rozevelt/Gainmark"
+          onPress={() => Linking.openURL(REPO_URL)}
+        />
+        <Row label="Made by" value="Rasmus Brunila" last />
       </Section>
 
       <Text style={[settingsStyles.footnote, { color: c.textFaint }]}>

@@ -12,6 +12,7 @@ import { LiveTimerHost } from '@/components/live-timer-host';
 import { ToastHost } from '@/components/toast';
 import { APP_FONTS } from '@/components/text';
 import { autoBackup } from '@/lib/backup';
+import { autoCheckForUpdate } from '@/lib/updates';
 import { syncReminders } from '@/lib/reminders';
 import { DEFAULT_REMINDER, useGroups, useStore } from '@/store/store';
 import { useColors, useIsDark } from '@/theme';
@@ -41,6 +42,8 @@ export default function RootLayout() {
   useEffect(() => {
     if (!dataReady) return;
     autoBackup();
+    // Once a day: is there a newer version on GitHub?
+    autoCheckForUpdate();
     const sub = AppState.addEventListener('change', (s) => {
       if (s === 'background') autoBackup();
     });

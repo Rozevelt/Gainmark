@@ -51,7 +51,8 @@
     "lint": "expo lint",
     "phone": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android.ps1",
     "phone:build": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/android.ps1 -Build",
-    "apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1"
+    "apk": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-apk.ps1",
+    "release": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release.ps1"
   },
   "private": true
 }

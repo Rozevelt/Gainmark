@@ -5,6 +5,8 @@
 # Note: the SDK's CMake 3.22.1 ninja.exe was replaced with the one from CMake 3.31.6 (ninja 1.12.1),
 # because the old one can't handle the long build paths on Windows (original kept as ninja.exe.bak).
 
+param([switch]$NoInstall)
+
 $root = Split-Path $PSScriptRoot -Parent
 $jdk = Get-ChildItem 'C:\Program Files\Eclipse Adoptium' -Directory -Filter 'jdk-21*' |
   Sort-Object Name -Descending | Select-Object -First 1
@@ -28,9 +30,16 @@ if ($code -ne 0) { Write-Host 'BUILD FAILED (gradle)'; exit 1 }
 Copy-Item (Join-Path $root 'android\app\build\outputs\apk\release\app-release.apk') (Join-Path $root 'gainmark.apk') -Force
 Write-Host "Built $(Join-Path $root 'gainmark.apk')"
 
+if ($NoInstall) { exit 0 }
+
 Write-Host '=== 3/3 Install on the phone ==='
 $adb = Get-Command adb -ErrorAction SilentlyContinue
 $adbPath = if ($adb) { $adb.Source } else { 'C:\Users\rasmu.RASMUS\Downloads\scrcpy-win64-v3.3.3\scrcpy-win64-v3.3.3\adb.exe' }
 & $adbPath install -r (Join-Path $root 'gainmark.apk')
-if ($LASTEXITCODE -ne 0) { Write-Host 'Built, but installing failed. Is the phone plugged in and unlocked?'; exit 1 }
+if ($LASTEXITCODE -ne 0) {
+  Write-Host 'Built, but installing failed. Is the phone plugged in and unlocked?'
+  Write-Host 'If it says the signatures do not match: the installed copy was signed with the old key.'
+  Write-Host 'Export your data in Gainmark, uninstall it, run this again, then import the data.'
+  exit 1
+}
 Write-Host 'DONE: Gainmark is installed on the phone.'
