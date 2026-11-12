@@ -20,11 +20,14 @@ export function WarmupCard({
   entry,
   exercise,
   unit,
+  locked = false,
 }: {
   date: string;
   entry: Entry;
   exercise: Exercise | undefined;
   unit: Unit;
+  /** Cards are being rearranged: the warm-up can't be checked or turned off. */
+  locked?: boolean;
 }) {
   const c = useColors();
   const steps = useWarmupSteps();
@@ -56,20 +59,22 @@ export function WarmupCard({
             </Text>
           </View>
         </View>
-        <IconButton
-          name="close"
-          size={20}
-          color={c.textFaint}
-          label={`Turn off warm-up for ${name}`}
-          onPress={() =>
-            confirmAction(
-              'Turn off warm-up?',
-              `${name} will no longer get warm-up sets. You can turn it back on from the move's settings.`,
-              'Turn off',
-              () => setExerciseWarmup(entry.exerciseId, false),
-            )
-          }
-        />
+        <View style={locked && { opacity: 0.4 }} pointerEvents={locked ? 'none' : 'auto'}>
+          <IconButton
+            name="close"
+            size={20}
+            color={c.textFaint}
+            label={`Turn off warm-up for ${name}`}
+            onPress={() =>
+              confirmAction(
+                'Turn off warm-up?',
+                `${name} will no longer get warm-up sets. You can turn it back on from the move's settings.`,
+                'Turn off',
+                () => setExerciseWarmup(entry.exerciseId, false),
+              )
+            }
+          />
+        </View>
       </View>
 
       <View style={[styles.row, styles.headRow]}>
@@ -102,6 +107,7 @@ export function WarmupCard({
                 <Text style={[styles.value, { color: c.text }]}>{step.reps}</Text>
               </View>
               <Pressable
+                disabled={locked}
                 onPress={() => {
                   tick('light');
                   toggleWarmupDone(date, entry.id, i);
@@ -110,7 +116,7 @@ export function WarmupCard({
                 accessibilityState={{ checked: done }}
                 accessibilityLabel={`Warm-up set ${i + 1} done`}
                 hitSlop={4}
-                style={styles.colCheck}>
+                style={[styles.colCheck, locked && { opacity: 0.5 }]}>
                 <View
                   style={[
                     styles.check,

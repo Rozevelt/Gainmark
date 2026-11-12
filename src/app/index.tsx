@@ -17,6 +17,7 @@ import { Text } from '@/components/text';
 import { ExerciseCard } from '@/components/exercise-card';
 import { DraggableList } from '@/components/draggable-list';
 import { REST_BAR_HEIGHT, RestTimerBar } from '@/components/rest-timer-bar';
+import { showProgressed } from '@/components/toast';
 import { WarmupCard } from '@/components/warmup-card';
 import { WorkoutTimer } from '@/components/workout-timer';
 import { Icon } from '@/components/icon';
@@ -53,6 +54,12 @@ export default function DayScreen() {
   const date = useStore((s) => s.viewDate);
   const setViewDate = useStore((s) => s.setViewDate);
   const isToday = date === todayKey();
+  // First launch: show the welcome screen once the saved data has loaded.
+  const ready = useStore((s) => s.ready);
+  const onboarded = useStore((s) => !!s.settings.onboarded);
+  useEffect(() => {
+    if (ready && !onboarded) router.push('/welcome');
+  }, [ready, onboarded]);
 
   const listRef = useRef<FlatList<number>>(null);
   const currentPage = useRef(pageOf(date));
@@ -60,6 +67,18 @@ export default function DayScreen() {
   const pages = useMemo(() => Array.from({ length: PAGE_COUNT }, (_, i) => i), []);
   // While a move card is held, sideways scrolling pauses so the drag isn't stolen.
   const [dragging, setDragging] = useState(false);
+  // While a card is popped out (rearranging), the day swipe is paused too.
+  const [picking, setPicking] = useState(false);
+  const pagerLocked = dragging || picking;
+
+  // Pausing the swipe can catch the pager part-way between two days; settle it back on the day
+  // whenever rearranging starts or stops.
+  const wasLocked = useRef(pagerLocked);
+  useEffect(() => {
+    if (wasLocked.current === pagerLocked) return;
+    wasLocked.current = pagerLocked;
+    listRef.current?.scrollToIndex({ index: currentPage.current, animated: true });
+  }, [pagerLocked]);
 
   // The day can also change from the arrows, the calendar or "Back to today":
   // scroll the pager there (sliding for the next/previous day, jumping for further).
@@ -86,7 +105,7 @@ export default function DayScreen() {
           <>
             <IconButton compact name="add" label="Add moves" onPress={() => router.push('/add-exercise')} />
             <IconButton compact name="timer" label="Timer" onPress={() => router.push('/timer')} />
-            <IconButton compact name="chart" label="Progress" onPress={() => router.push('/progress')} />
+            <IconButton compact name="chart" label="Statistics" onPress={() => router.push('/progress')} />
             <IconButton compact name="calendar" label="Calendar" onPress={() => router.push('/calendar')} />
             <IconButton compact name="more" label="Settings" onPress={() => router.push('/settings')} />
           </>
@@ -143,7 +162,7 @@ export default function DayScreen() {
         initialNumToRender={1}
         maxToRenderPerBatch={2}
         windowSize={3}
-        scrollEnabled={!dragging}
+        scrollEnabled={!pagerLocked}
         keyboardShouldPersistTaps="handled"
         onMomentumScrollEnd={(e) => {
           const page = Math.round(e.nativeEvent.contentOffset.x / width);
@@ -151,7 +170,15 @@ export default function DayScreen() {
           currentPage.current = page;
           setViewDate(dateAt(page));
         }}
-        renderItem={({ item }) => <DayPage date={dateAt(item)} width={width} onDragChange={setDragging} />}
+        renderItem={({ item }) => (
+          <DayPage
+            date={dateAt(item)}
+            width={width}
+            current={dateAt(item) === date}
+            onDragChange={setDragging}
+            onPickChange={setPicking}
+          />
+        )}
         style={{ flex: 1 }}
       />
       <RestTimerBar />
@@ -163,11 +190,16 @@ export default function DayScreen() {
 function DayPage({
   date,
   width,
+  current,
   onDragChange,
+  onPickChange,
 }: {
   date: string;
   width: number;
+  /** This is the day on screen. */
+  current: boolean;
   onDragChange: (dragging: boolean) => void;
+  onPickChange: (picking: boolean) => void;
 }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
@@ -206,6 +238,11 @@ function DayPage({
   const [dragging, setDragging] = useState(false);
   const scrollRef = useRef<ScrollViewInstance>(null);
   const scrollY = useRef(0);
+  // Visible height and content height of the page, so a dragged card stays on screen.
+  const viewport = useRef({ height: 0, content: 0 });
+  // While a card is dragged, the list drives the scrolling, so scroll events are ignored
+  // (late events would pull the position back and make the card jitter).
+  const draggingRef = useRef(false);
 
   return (
     <KeyboardAvoidingView style={{ width, flex: 1 }} behavior="padding">
@@ -217,7 +254,11 @@ function DayPage({
           },
         ]}
         ref={scrollRef}
-        onScroll={(e) => (scrollY.current = e.nativeEvent.contentOffset.y)}
+        onScroll={(e) => {
+          if (!draggingRef.current) scrollY.current = e.nativeEvent.contentOffset.y;
+        }}
+        onLayout={(e) => (viewport.current.height = e.nativeEvent.layout.height)}
+        onContentSizeChange={(_, h) => (viewport.current.content = h)}
         scrollEventThrottle={16}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
@@ -271,10 +312,14 @@ function DayPage({
               gap={12}
               scrollRef={scrollRef}
               scrollY={scrollY}
+              viewport={viewport}
               onDragChange={(d) => {
+                draggingRef.current = d;
                 setDragging(d);
                 onDragChange(d);
               }}
+              onPickChange={onPickChange}
+              active={current}
               onReorder={(ids) => reorderEntries(date, ids)}
               renderItem={(entry, drag, pick) => {
                 const ex = byId.get(entry.exerciseId);
@@ -284,7 +329,7 @@ function DayPage({
                   // A move's warm-up card sits right above it and moves with it.
                   <View style={{ gap: 12 }}>
                     {kind === 'weight' && exerciseSettings[entry.exerciseId]?.warmup ? (
-                      <WarmupCard date={date} entry={entry} exercise={ex} unit={unit} />
+                      <WarmupCard date={date} entry={entry} exercise={ex} unit={unit} locked={pick.rearranging} />
                     ) : null}
                     <ExerciseCard
                       date={date}
@@ -298,6 +343,7 @@ function DayPage({
                       canLinkUp={i > 0}
                       dragGesture={drag}
                       picked={pick.selected}
+                      locked={pick.rearranging}
                       onPutDown={pick.deselect}
                     />
                   </View>
@@ -310,6 +356,12 @@ function DayPage({
               icon="chart"
               variant="ghost"
               onPress={() => router.push({ pathname: '/workout/[date]', params: { date } })}
+            />
+            <Button
+              title="Save as workout"
+              icon="bookmark"
+              variant="ghost"
+              onPress={() => router.push({ pathname: '/template-edit', params: { date } })}
             />
             <Button
               title="Delete workout"
@@ -356,6 +408,8 @@ function EmptyDay({ date, plan }: { date: string; plan: SplitDay | undefined }) 
   const c = useColors();
   const days = useStore((s) => s.days);
   const copyWorkout = useStore((s) => s.copyWorkout);
+  const templates = useStore((s) => s.templates);
+  const startTemplate = useStore((s) => s.startTemplate);
   const sortedDates = useSortedDates();
   const { byId } = useExercises();
   const { groupById } = useGroups();
@@ -371,6 +425,10 @@ function EmptyDay({ date, plan }: { date: string; plan: SplitDay | undefined }) 
   const match = findMatchingWorkout(plan, date, sortedDates, (d) =>
     dayGroups(days[d], byId, groupById).map((g) => g.id),
   );
+  // A saved workout with the same name as today's split day comes first.
+  const planName = plan?.name?.trim().toLowerCase();
+  const planTemplate = planName ? templates.find((t) => t.name.toLowerCase() === planName) : undefined;
+  const saved = planTemplate ? [planTemplate, ...templates.filter((t) => t !== planTemplate)] : templates;
 
   return (
     <View style={{ gap: 20 }}>
@@ -389,13 +447,21 @@ function EmptyDay({ date, plan }: { date: string; plan: SplitDay | undefined }) 
               ) : null;
             })}
           </View>
+          {planTemplate ? (
+            <Button
+              title={`Start ${planTemplate.name}`}
+              icon="bookmark"
+              onPress={() => startTemplate(planTemplate.id, date)}
+            />
+          ) : null}
           {match ? (
             <Button
               title={`Copy last ${plan.name || 'workout'} (${shortLabel(match)})`}
               icon="copy"
-              onPress={() => copyWorkout(match, date, 'append')}
+              variant={planTemplate ? 'secondary' : 'primary'}
+              onPress={() => showProgressed(copyWorkout(match, date, 'append'))}
             />
-          ) : (
+          ) : planTemplate ? null : (
             <Text style={[styles.emptyBody, { color: c.textDim, textAlign: 'left' }]}>
               No earlier {plan.name || 'matching'} workout yet. Add moves to start one.
             </Text>
@@ -421,6 +487,44 @@ function EmptyDay({ date, plan }: { date: string; plan: SplitDay | undefined }) 
         </View>
       </View>
 
+      {saved.length > 0 ? (
+        <View style={{ gap: 10 }}>
+          <Text style={[styles.sectionTitle, { color: c.textDim }]}>SAVED WORKOUTS</Text>
+          {saved.map((t) => {
+            const groups = dayGroups(t.entries, byId, groupById);
+            return (
+              <View key={t.id} style={[styles.recentRow, { backgroundColor: c.surface, borderColor: c.border }]}>
+                <View style={{ flex: 1 }}>
+                  <View style={styles.recentTitleRow}>
+                    {groups.map((g) => (
+                      <View key={g.id} style={[styles.recentDot, { backgroundColor: g.color }]} />
+                    ))}
+                    <Text style={[styles.recentTitle, { color: c.text, flexShrink: 1 }]} numberOfLines={1}>
+                      {t.name}
+                    </Text>
+                  </View>
+                  <Text style={[styles.recentMeta, { color: c.textDim }]} numberOfLines={1}>
+                    {t.entries.length} {t.entries.length === 1 ? 'move' : 'moves'}
+                    {groups.length ? ` · ${groups.map((g) => g.name).join(' · ')}` : ''}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => startTemplate(t.id, date)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Start ${t.name}`}
+                  style={({ pressed }) => [
+                    styles.copyButton,
+                    { backgroundColor: c.accentSoft, opacity: pressed ? 0.7 : 1 },
+                  ]}>
+                  <Icon name="play" size={16} color={c.accent} />
+                  <Text style={[styles.copyText, { color: c.accent }]}>Start</Text>
+                </Pressable>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+
       {recent.length > 0 ? (
         <View style={{ gap: 10 }}>
           <Text style={[styles.sectionTitle, { color: c.textDim }]}>RECENT WORKOUTS</Text>
@@ -444,7 +548,7 @@ function EmptyDay({ date, plan }: { date: string; plan: SplitDay | undefined }) 
                   </Text>
                 </View>
                 <Pressable
-                  onPress={() => copyWorkout(d, date, 'append')}
+                  onPress={() => showProgressed(copyWorkout(d, date, 'append'))}
                   accessibilityRole="button"
                   accessibilityLabel={`Copy workout from ${shortLabel(d)}`}
                   style={({ pressed }) => [

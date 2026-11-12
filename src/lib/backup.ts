@@ -67,6 +67,8 @@ export function parseBackup(text: string): AppData {
     groups: Array.isArray(d.groups) ? d.groups : [],
     sessions: d.sessions && typeof d.sessions === 'object' ? d.sessions : {},
     bodyweights: d.bodyweights && typeof d.bodyweights === 'object' ? d.bodyweights : {},
+    templates: Array.isArray(d.templates) ? d.templates : [],
+    measurements: d.measurements && typeof d.measurements === 'object' ? d.measurements : {},
   };
 }
 

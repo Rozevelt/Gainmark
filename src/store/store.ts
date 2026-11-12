@@ -7,6 +7,7 @@ import { BAR_WEIGHT, BUILTIN_EXERCISES, type Exercise, type MoveKind } from '@/d
 import { DEFAULT_GROUPS, GROUP_COLORS, LEGACY_MUSCLE_TO_GROUP, type Group } from '@/data/groups';
 import type { Split, SplitDay } from '@/data/splits';
 import { todayKey } from '@/lib/dates';
+import { DEFAULT_PROGRESSION, progressionStep, progressSets, type ProgressionSettings } from '@/lib/progression';
 import { cancelRestAlert, scheduleRestAlert } from '@/lib/rest-alert';
 import { DEFAULT_PLATES } from '@/lib/stats';
 
@@ -21,8 +22,12 @@ export type WorkoutSet = {
   reps: number | null;
   time?: number | null;
   distance?: number | null;
+  /** Drop set: lighter weight × reps done straight after the set (checked together with it). */
+  drops?: Drop[];
   done?: boolean;
 };
+
+export type Drop = { weight: number | null; reps: number | null };
 /**
  * `warmupDone` ticks the move's warm-up steps (only used when warm-ups are on for the move).
  * Moves next to each other with the same `superset` id are done as a superset.
@@ -56,6 +61,21 @@ export const DEFAULT_DISPLAY: DisplaySettings = { oneRM: false, plates: false };
 export type GoalSettings = { perWeek: number };
 export const DEFAULT_GOAL: GoalSettings = { perWeek: 3 };
 
+/** Look: dark / light / follow the phone, and the accent colour (see ACCENTS in theme.ts). */
+export type ThemeSettings = { mode: 'system' | 'dark' | 'light'; accent: string };
+export const DEFAULT_THEME: ThemeSettings = { mode: 'system', accent: 'lime' };
+
+/**
+ * A saved workout: its moves with their sets (values included), to start a day from.
+ * Moves with the same `superset` id are a superset.
+ */
+export type TemplateEntry = {
+  exerciseId: string;
+  sets: Omit<WorkoutSet, 'id' | 'done'>[];
+  superset?: string;
+};
+export type Template = { id: string; name: string; entries: TemplateEntry[]; updatedAt: number };
+
 /** Automatic daily backups kept on the phone. */
 export type BackupSettings = { auto: boolean };
 export const DEFAULT_BACKUP: BackupSettings = { auto: true };
@@ -86,6 +106,14 @@ export type Settings = {
   warmup?: WarmupStep[];
   backup?: BackupSettings;
   goal?: GoalSettings;
+  theme?: ThemeSettings;
+  progression?: ProgressionSettings;
+  /** Live timer in the notification shade / lock screen. */
+  liveTimer?: boolean;
+  /** The welcome screen has been seen. */
+  onboarded?: boolean;
+  /** Body measurement shown on the Body tab. */
+  measure?: string;
 };
 
 export const DEFAULT_REMINDER: Reminder = { enabled: false, hour: 17, minute: 0 };
@@ -120,6 +148,15 @@ type State = {
   bodyweights: Record<string, number>;
   setBodyweight: (date: string, value: number | null) => void;
   setGoal: (perWeek: number) => void;
+  setTheme: (patch: Partial<ThemeSettings>) => void;
+  /** Saved workouts, newest first. */
+  templates: Template[];
+  /** Save a day's moves as a workout; a saved workout with the same name is replaced. */
+  saveTemplate: (name: string, date: string) => Template;
+  renameTemplate: (id: string, name: string) => void;
+  deleteTemplate: (id: string) => void;
+  /** Add a saved workout's moves to a day. */
+  startTemplate: (id: string, date: string) => void;
   /** Join a move to the move above it as a superset (or to that move's superset). */
   linkSuperset: (date: string, entryId: string) => void;
   /** Take a move out of its superset. */
@@ -170,7 +207,13 @@ type State = {
     min?: number,
   ) => void;
   toggleSetDone: (date: string, entryId: string, setId: string) => void;
-  copyWorkout: (from: string, to: string, mode: 'append' | 'replace') => void;
+  /** Copy a day's moves to another day (with auto progression, if on). Returns how many moves were progressed. */
+  copyWorkout: (from: string, to: string, mode: 'append' | 'replace') => number;
+  setProgression: (patch: Partial<ProgressionSettings>) => void;
+  setSettingsFlags: (patch: Partial<Pick<Settings, 'liveTimer' | 'onboarded' | 'measure'>>) => void;
+  /** Body measurements by date, then by measurement id (cm or inches, body fat in %). */
+  measurements: Record<string, Record<string, number>>;
+  setMeasurement: (date: string, key: string, value: number | null) => void;
   createExercise: (name: string, groupId: string, kind?: MoveKind) => Exercise;
   deleteExercise: (id: string) => void;
   setUnit: (unit: Unit) => void;
@@ -181,6 +224,19 @@ type State = {
   setReminder: (patch: Partial<Reminder>) => void;
   /** Check or uncheck every set of a move at once. */
   setEntryDone: (date: string, entryId: string, done: boolean) => void;
+  /** Add a drop to a set (about 80% of the weight before it, same reps). */
+  addDrop: (date: string, entryId: string, setId: string) => void;
+  updateDrop: (date: string, entryId: string, setId: string, index: number, patch: Partial<Drop>) => void;
+  stepDrop: (
+    date: string,
+    entryId: string,
+    setId: string,
+    index: number,
+    field: 'weight' | 'reps',
+    delta: number,
+    min?: number,
+  ) => void;
+  removeDrop: (date: string, entryId: string, setId: string, index: number) => void;
 };
 
 // ---------- persistence ----------
@@ -194,6 +250,8 @@ const EX_SETTINGS_KEY = `${PREFIX}exsettings`;
 const GROUPS_KEY = `${PREFIX}groups`;
 const SESSIONS_KEY = `${PREFIX}sessions`;
 const BODYWEIGHT_KEY = `${PREFIX}bodyweight`;
+const TEMPLATES_KEY = `${PREFIX}templates`;
+const MEASUREMENTS_KEY = `${PREFIX}measurements`;
 
 const dirty = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
@@ -209,7 +267,8 @@ async function flush() {
   flushTimer = null;
   const keys = [...dirty];
   dirty.clear();
-  const { days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights } = useStore.getState();
+  const { days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights, templates, measurements } =
+    useStore.getState();
   await Promise.all(
     keys.map((key) => {
       if (key === CUSTOM_KEY) return AsyncStorage.setItem(key, JSON.stringify(customExercises));
@@ -218,10 +277,10 @@ async function flush() {
       if (key === GROUPS_KEY) return AsyncStorage.setItem(key, JSON.stringify(groups));
       if (key === SESSIONS_KEY) return AsyncStorage.setItem(key, JSON.stringify(sessions));
       if (key === BODYWEIGHT_KEY) return AsyncStorage.setItem(key, JSON.stringify(bodyweights));
+      if (key === TEMPLATES_KEY) return AsyncStorage.setItem(key, JSON.stringify(templates));
+      if (key === MEASUREMENTS_KEY) return AsyncStorage.setItem(key, JSON.stringify(measurements));
       const entries = days[key.slice(DAY_PREFIX.length)];
-      return entries?.length
-        ? AsyncStorage.setItem(key, JSON.stringify(entries))
-        : AsyncStorage.removeItem(key);
+      return entries?.length ? AsyncStorage.setItem(key, JSON.stringify(entries)) : AsyncStorage.removeItem(key);
     }),
   );
 }
@@ -234,12 +293,21 @@ AppState.addEventListener('change', (s) => {
 /** Everything Gainmark saves, as one object (for export and backups). */
 export type AppData = Pick<
   State,
-  'days' | 'customExercises' | 'settings' | 'exerciseSettings' | 'groups' | 'sessions' | 'bodyweights'
+  | 'days'
+  | 'customExercises'
+  | 'settings'
+  | 'exerciseSettings'
+  | 'groups'
+  | 'sessions'
+  | 'bodyweights'
+  | 'templates'
+  | 'measurements'
 >;
 
 export function getAppData(): AppData {
-  const { days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights } = useStore.getState();
-  return { days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights };
+  const { days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights, templates, measurements } =
+    useStore.getState();
+  return { days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights, templates, measurements };
 }
 
 /**
@@ -302,8 +370,34 @@ function withDay(days: Days, date: string, entries: Entry[]): Days {
   return next;
 }
 
+const BUILTIN_BY_ID = new Map(BUILTIN_EXERCISES.map((e) => [e.id, e]));
+
+/** How a move is logged (its own setting, else the move's default). */
+function kindOfId(s: State, exerciseId: string): MoveKind {
+  return (
+    s.exerciseSettings[exerciseId]?.kind ??
+    s.customExercises.find((e) => e.id === exerciseId)?.kind ??
+    BUILTIN_BY_ID.get(exerciseId)?.kind ??
+    'weight'
+  );
+}
+
 function mapEntry(entries: Entry[], entryId: string, fn: (e: Entry) => Entry) {
   return entries.map((e) => (e.id === entryId ? fn(e) : e));
+}
+
+/** Change one set of one move on a day. */
+function withSetOf(s: State, date: string, entryId: string, setId: string, fn: (x: WorkoutSet) => WorkoutSet) {
+  return {
+    days: withDay(
+      s.days,
+      date,
+      mapEntry(s.days[date] ?? EMPTY, entryId, (e) => ({
+        ...e,
+        sets: e.sets.map((x) => (x.id === setId ? fn(x) : x)),
+      })),
+    ),
+  };
 }
 
 const EMPTY: Entry[] = [];
@@ -351,6 +445,8 @@ export const useStore = create<State>()((set, get) => ({
   exerciseSettings: {},
   sessions: {},
   bodyweights: {},
+  templates: [],
+  measurements: {},
   countdown: null,
 
   load: async () => {
@@ -364,6 +460,8 @@ export const useStore = create<State>()((set, get) => ({
       let groups: Group[] = DEFAULT_GROUPS;
       let sessions: Record<string, Session> = {};
       let bodyweights: Record<string, number> = {};
+      let templates: Template[] = [];
+      let measurements: Record<string, Record<string, number>> = {};
       for (const [key, value] of pairs) {
         if (!value) continue;
         if (key.startsWith(DAY_PREFIX)) days[key.slice(DAY_PREFIX.length)] = JSON.parse(value);
@@ -373,6 +471,8 @@ export const useStore = create<State>()((set, get) => ({
         else if (key === GROUPS_KEY) groups = JSON.parse(value);
         else if (key === SESSIONS_KEY) sessions = JSON.parse(value);
         else if (key === BODYWEIGHT_KEY) bodyweights = JSON.parse(value);
+        else if (key === TEMPLATES_KEY) templates = JSON.parse(value);
+        else if (key === MEASUREMENTS_KEY) measurements = JSON.parse(value);
       }
       groups = withDefaultGroups(groups);
       // Moves saved before groups existed have a `muscle` instead of a `group`.
@@ -380,7 +480,20 @@ export const useStore = create<State>()((set, get) => ({
         const legacy = (e as Exercise & { muscle?: string }).muscle;
         return e.group ? e : { ...e, group: LEGACY_MUSCLE_TO_GROUP[legacy ?? ''] ?? 'legs' };
       });
-      set({ days, customExercises, settings, exerciseSettings, groups, sessions, bodyweights, ready: true });
+      // Anyone who already logged workouts has no need for the welcome screen.
+      if (settings.onboarded === undefined && Object.keys(days).length) settings = { ...settings, onboarded: true };
+      set({
+        days,
+        customExercises,
+        settings,
+        exerciseSettings,
+        groups,
+        sessions,
+        bodyweights,
+        templates,
+        measurements,
+        ready: true,
+      });
     } catch (e) {
       console.warn('Failed to load saved data', e);
       set({ ready: true });
@@ -468,6 +581,7 @@ export const useStore = create<State>()((set, get) => ({
             reps: last?.reps ?? null,
             ...(last?.time != null ? { time: last.time } : null),
             ...(last?.distance != null ? { distance: last.distance } : null),
+            ...(last?.drops?.length ? { drops: last.drops.map((d) => ({ ...d })) } : null),
           };
           return { ...e, sets: [...e.sets, fresh] };
         }),
@@ -565,28 +679,67 @@ export const useStore = create<State>()((set, get) => ({
       return { days, ...timer };
     }),
 
-  copyWorkout: (from, to, mode) =>
+  copyWorkout: (from, to, mode) => {
+    let progressed = 0;
     set((s) => {
+      const prog = { ...DEFAULT_PROGRESSION, ...s.settings.progression };
+      const step = progressionStep(prog, s.settings.unit);
       // Supersets get fresh ids so the copy doesn't share them with the original day.
       const ids = new Map<string, string>();
       const copied = (s.days[from] ?? EMPTY).map((e): Entry => {
         if (e.superset && !ids.has(e.superset)) ids.set(e.superset, newId());
+        let sets: WorkoutSet[] = e.sets.map((x) => ({
+          id: newId(),
+          weight: x.weight,
+          reps: x.reps,
+          ...(x.time != null ? { time: x.time } : null),
+          ...(x.distance != null ? { distance: x.distance } : null),
+          ...(x.drops?.length ? { drops: x.drops.map((d) => ({ ...d })) } : null),
+        }));
+        // Auto progression: weight and bodyweight moves only.
+        const kind = kindOfId(s, e.exerciseId);
+        if (kind === 'weight' || kind === 'bodyweight') {
+          const next = progressSets(sets, prog, step);
+          if (next.changed) progressed += 1;
+          sets = next.sets;
+        }
         return {
           id: newId(),
           exerciseId: e.exerciseId,
-          sets: e.sets.map((x) => ({
-            id: newId(),
-            weight: x.weight,
-            reps: x.reps,
-            ...(x.time != null ? { time: x.time } : null),
-            ...(x.distance != null ? { distance: x.distance } : null),
-          })),
+          sets,
           ...(e.superset ? { superset: ids.get(e.superset) } : null),
         };
       });
       const base = mode === 'append' ? (s.days[to] ?? EMPTY) : EMPTY;
       return { days: withDay(s.days, to, normalizeSupersets([...base, ...copied])) };
-    }),
+    });
+    return progressed;
+  },
+
+  setProgression: (patch) => {
+    set((s) => ({
+      settings: { ...s.settings, progression: { ...DEFAULT_PROGRESSION, ...s.settings.progression, ...patch } },
+    }));
+    markDirty(SETTINGS_KEY);
+  },
+
+  setSettingsFlags: (patch) => {
+    set((s) => ({ settings: { ...s.settings, ...patch } }));
+    markDirty(SETTINGS_KEY);
+  },
+
+  setMeasurement: (date, key, value) => {
+    set((s) => {
+      const day = { ...s.measurements[date] };
+      if (value != null && value > 0) day[key] = value;
+      else delete day[key];
+      const measurements = { ...s.measurements };
+      if (Object.keys(day).length) measurements[date] = day;
+      else delete measurements[date];
+      return { measurements };
+    });
+    markDirty(MEASUREMENTS_KEY);
+  },
 
   createExercise: (name, groupId, kind) => {
     const exercise: Exercise = {
@@ -733,6 +886,46 @@ export const useStore = create<State>()((set, get) => ({
     markDirty(EX_SETTINGS_KEY);
   },
 
+  addDrop: (date, entryId, setId) =>
+    set((s) =>
+      withSetOf(s, date, entryId, setId, (x) => {
+        const before = x.drops?.length ? x.drops[x.drops.length - 1] : x;
+        const step = s.settings.unit === 'kg' ? 2.5 : 5;
+        const w = before.weight;
+        // About 80% of the weight before it, rounded to a loadable step.
+        const weight = w && w > 0 ? Math.max(0, Math.round((w * 0.8) / step) * step) : w;
+        return { ...x, drops: [...(x.drops ?? []), { weight, reps: before.reps }] };
+      }),
+    ),
+
+  updateDrop: (date, entryId, setId, index, patch) =>
+    set((s) =>
+      withSetOf(s, date, entryId, setId, (x) => ({
+        ...x,
+        drops: (x.drops ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)),
+      })),
+    ),
+
+  stepDrop: (date, entryId, setId, index, field, delta, min = 0) =>
+    set((s) =>
+      withSetOf(s, date, entryId, setId, (x) => ({
+        ...x,
+        drops: (x.drops ?? []).map((d, i) =>
+          i === index ? { ...d, [field]: Math.max(min, Math.round(((d[field] ?? 0) + delta) * 100) / 100) } : d,
+        ),
+      })),
+    ),
+
+  removeDrop: (date, entryId, setId, index) =>
+    set((s) =>
+      withSetOf(s, date, entryId, setId, (x) => {
+        const drops = (x.drops ?? []).filter((_, i) => i !== index);
+        if (drops.length) return { ...x, drops };
+        const { drops: _unused, ...rest } = x;
+        return rest;
+      }),
+    ),
+
   setExerciseKind: (exerciseId, kind) => {
     set((s) => ({
       exerciseSettings: {
@@ -752,6 +945,59 @@ export const useStore = create<State>()((set, get) => ({
     });
     markDirty(BODYWEIGHT_KEY);
   },
+
+  setTheme: (patch) => {
+    set((s) => ({ settings: { ...s.settings, theme: { ...DEFAULT_THEME, ...s.settings.theme, ...patch } } }));
+    markDirty(SETTINGS_KEY);
+  },
+
+  saveTemplate: (name, date) => {
+    const clean = name.trim() || 'Workout';
+    const entries: TemplateEntry[] = (get().days[date] ?? EMPTY).map((e) => ({
+      exerciseId: e.exerciseId,
+      sets: e.sets.map(({ id: _id, done: _done, ...rest }) => rest),
+      ...(e.superset ? { superset: e.superset } : null),
+    }));
+    const existing = get().templates.find((t) => t.name.toLowerCase() === clean.toLowerCase());
+    const template: Template = { id: existing?.id ?? newId(), name: clean, entries, updatedAt: Date.now() };
+    set((s) => ({ templates: [template, ...s.templates.filter((t) => t.id !== template.id)] }));
+    markDirty(TEMPLATES_KEY);
+    return template;
+  },
+
+  renameTemplate: (id, name) => {
+    const clean = name.trim();
+    if (!clean) return;
+    set((s) => ({ templates: s.templates.map((t) => (t.id === id ? { ...t, name: clean } : t)) }));
+    markDirty(TEMPLATES_KEY);
+  },
+
+  deleteTemplate: (id) => {
+    set((s) => ({ templates: s.templates.filter((t) => t.id !== id) }));
+    markDirty(TEMPLATES_KEY);
+  },
+
+  startTemplate: (id, date) =>
+    set((s) => {
+      const t = s.templates.find((x) => x.id === id);
+      if (!t) return {};
+      // Fresh ids, so the day doesn't share anything with the saved workout.
+      const ids = new Map<string, string>();
+      const added = t.entries.map((e): Entry => {
+        if (e.superset && !ids.has(e.superset)) ids.set(e.superset, newId());
+        return {
+          id: newId(),
+          exerciseId: e.exerciseId,
+          sets: e.sets.map((x) => ({
+            ...x,
+            id: newId(),
+            ...(x.drops?.length ? { drops: x.drops.map((d) => ({ ...d })) } : null),
+          })),
+          ...(e.superset ? { superset: ids.get(e.superset) } : null),
+        };
+      });
+      return { days: withDay(s.days, date, normalizeSupersets([...(s.days[date] ?? EMPTY), ...added])) };
+    }),
 
   setGoal: (perWeek) => {
     set((s) => ({ settings: { ...s.settings, goal: { perWeek: Math.max(0, Math.min(7, perWeek)) } } }));
@@ -812,6 +1058,8 @@ export const useStore = create<State>()((set, get) => ({
       groups,
       sessions: data.sessions ?? {},
       bodyweights: data.bodyweights ?? {},
+      templates: data.templates ?? [],
+      measurements: data.measurements ?? {},
     };
     const old = (await AsyncStorage.getAllKeys()).filter((k) => k.startsWith(PREFIX));
     await AsyncStorage.multiRemove(old);
@@ -823,6 +1071,8 @@ export const useStore = create<State>()((set, get) => ({
       [GROUPS_KEY, JSON.stringify(next.groups)],
       [SESSIONS_KEY, JSON.stringify(next.sessions)],
       [BODYWEIGHT_KEY, JSON.stringify(next.bodyweights)],
+      [TEMPLATES_KEY, JSON.stringify(next.templates)],
+      [MEASUREMENTS_KEY, JSON.stringify(next.measurements)],
     ]);
     if (get().countdown) cancelRestAlert();
     set({ ...next, countdown: null, viewDate: todayKey() });
@@ -969,8 +1219,10 @@ export function formatSet(s: WorkoutSet, unit: Unit = 'kg') {
     return [dist, s.time != null ? formatClock(s.time) : ''].filter(Boolean).join(' · ') || '—';
   }
   if (s.weight == null && s.reps == null) return '—';
-  if (s.weight == null || s.weight === 0) return `${s.reps ?? 0} reps`;
-  return `${formatWeight(s.weight)} × ${s.reps ?? 0}`;
+  const part = (w: number | null, r: number | null) =>
+    w == null || w === 0 ? `${r ?? 0} reps` : `${formatWeight(w)} × ${r ?? 0}`;
+  // Drops follow the set: "100 × 8 → 80 × 6".
+  return [part(s.weight, s.reps), ...(s.drops ?? []).map((d) => part(d.weight, d.reps))].join(' → ');
 }
 
 /** The most recent body weight logged on or before `date`, if any. */

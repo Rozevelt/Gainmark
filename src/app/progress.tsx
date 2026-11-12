@@ -1,10 +1,18 @@
 import { router } from 'expo-router';
 import { useMemo, useState, type ReactNode } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import Animated, {
+  useAnimatedRef,
+  useAnimatedScrollHandler,
+  useAnimatedStyle,
+  useSharedValue,
+} from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { BarChart, LineChart, StatTile } from '@/components/charts';
 import { DonutChart } from '@/components/donut';
+import { TrainingHeatmap } from '@/components/heatmap';
+import { Measurements } from '@/components/measurements';
 import { Icon } from '@/components/icon';
 import { Text } from '@/components/text';
 import { Chip, IconButton, ScreenHeader } from '@/components/ui';
@@ -16,7 +24,10 @@ import {
   goalStatus,
   groupBreakdown,
   moveSeries,
+  moveHistory,
+  moveRecords,
   movesInRange,
+  type MoveRecord,
   periodRange,
   rangeTotals,
   type Metric,
@@ -25,20 +36,31 @@ import {
   type Range,
   type ShareBy,
 } from '@/lib/progress';
+import type { MoveKind } from '@/data/exercises';
 import { useProgressMove } from '@/lib/progress-pick';
-import { fmt } from '@/lib/stats';
+import { fmt, NOMINAL_BODYWEIGHT } from '@/lib/stats';
 import { dayGroups } from '@/lib/summary';
-import { bodyweightOn, formatClock, useExercises, useGoal, useGroups, useSortedDates, useStore } from '@/store/store';
+import {
+  bodyweightOn,
+  formatClock,
+  formatSet,
+  useExercises,
+  useGoal,
+  useGroups,
+  useSortedDates,
+  useStore,
+} from '@/store/store';
 import { Stepper } from '@/components/stepper';
 import { confirmAction } from '@/lib/confirm';
 import { radius, useColors } from '@/theme';
 
-type Tab = 'overview' | 'trends' | 'muscles' | 'moves' | 'body';
+type Tab = 'overview' | 'trends' | 'muscles' | 'moves' | 'records' | 'body';
 const TABS: { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'trends', label: 'Trends' },
   { id: 'muscles', label: 'Muscles' },
   { id: 'moves', label: 'Moves' },
+  { id: 'records', label: 'Records' },
   { id: 'body', label: 'Body' },
 ];
 
@@ -74,23 +96,46 @@ export default function ProgressScreen() {
   const range = useMemo(() => periodRange(period, offset, first), [period, offset, first]);
   const prev = useMemo(() => (period === 'all' ? null : periodRange(period, offset + 1)), [period, offset]);
 
+  // The tabs are pages side by side: swipe left or right, or tap a tab. The underline follows
+  // the swipe.
+  const { width } = useWindowDimensions();
+  const pagerRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollX = useSharedValue(0);
+  const onPagerScroll = useAnimatedScrollHandler((e) => {
+    scrollX.value = e.contentOffset.x;
+  });
+  const tabW = (width - 16) / TABS.length;
+  const lineStyle = useAnimatedStyle(() => ({ transform: [{ translateX: (scrollX.value / width) * tabW }] }));
+  const goToTab = (i: number) => {
+    setTab(TABS[i].id);
+    pagerRef.current?.scrollTo({ x: i * width, animated: true });
+  };
+
   return (
     <View style={{ flex: 1, backgroundColor: c.bg }}>
-      <ScreenHeader title="Progress" left={<IconButton name="back" label="Back" onPress={() => router.back()} />} />
+      <ScreenHeader title="Statistics" left={<IconButton name="back" label="Back" onPress={() => router.back()} />} />
 
       {/* Tabs, then one row of period controls shared by every tab. */}
       <View style={[styles.tabs, { borderBottomColor: c.border }]}>
-        {TABS.map((t) => (
+        {TABS.map((t, i) => (
           <Pressable
             key={t.id}
-            onPress={() => setTab(t.id)}
+            onPress={() => goToTab(i)}
             accessibilityRole="tab"
             accessibilityState={{ selected: tab === t.id }}
             style={styles.tab}>
-            <Text style={[styles.tabText, { color: tab === t.id ? c.text : c.textDim }]}>{t.label}</Text>
-            <View style={[styles.tabLine, { backgroundColor: tab === t.id ? c.accent : 'transparent' }]} />
+            <Text
+              style={[styles.tabText, { color: tab === t.id ? c.text : c.textDim }]}
+              numberOfLines={1}
+              adjustsFontSizeToFit
+              minimumFontScale={0.85}>
+              {t.label}
+            </Text>
           </Pressable>
         ))}
+        <Animated.View style={[styles.tabLineTrack, { width: tabW }, lineStyle]} pointerEvents="none">
+          <View style={[styles.tabLine, { backgroundColor: c.accent }]} />
+        </Animated.View>
       </View>
 
       <View style={styles.periodBar}>
@@ -130,13 +175,32 @@ export default function ProgressScreen() {
         </View>
       </View>
 
-      <ScrollView contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
-        {tab === 'overview' ? <Overview range={range} prev={prev} /> : null}
-        {tab === 'trends' ? <Trends range={range} prev={prev} /> : null}
-        {tab === 'muscles' ? <Muscles range={range} prev={prev} /> : null}
-        {tab === 'moves' ? <Moves range={range} prev={prev} /> : null}
-        {tab === 'body' ? <Body range={range} prev={prev} /> : null}
-      </ScrollView>
+      <Animated.ScrollView
+        ref={pagerRef}
+        horizontal
+        pagingEnabled
+        showsHorizontalScrollIndicator={false}
+        onScroll={onPagerScroll}
+        scrollEventThrottle={16}
+        onMomentumScrollEnd={(e) => {
+          const i = Math.round(e.nativeEvent.contentOffset.x / width);
+          if (TABS[i]) setTab(TABS[i].id);
+        }}
+        style={{ flex: 1 }}>
+        {TABS.map((t) => (
+          <ScrollView
+            key={t.id}
+            style={{ width }}
+            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
+            {t.id === 'overview' ? <Overview range={range} prev={prev} /> : null}
+            {t.id === 'trends' ? <Trends range={range} prev={prev} /> : null}
+            {t.id === 'muscles' ? <Muscles range={range} prev={prev} /> : null}
+            {t.id === 'moves' ? <Moves range={range} prev={prev} /> : null}
+            {t.id === 'records' ? <Records range={range} prev={prev} /> : null}
+            {t.id === 'body' ? <Body range={range} prev={prev} /> : null}
+          </ScrollView>
+        ))}
+      </Animated.ScrollView>
     </View>
   );
 }
@@ -165,6 +229,9 @@ function Overview({ range, prev }: TabProps) {
   return (
     <>
       <GoalCard />
+      <Card title="TRAINING" right={<Text style={[styles.cardLink, { color: c.textDim }]}>Last 6 months</Text>}>
+        <TrainingHeatmap days={days} />
+      </Card>
       <View style={styles.tiles}>
         <StatTile
           label="Workouts"
@@ -249,11 +316,11 @@ function Trends({ range }: TabProps) {
 
   return (
     <Card title="TRENDS">
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+      <View style={styles.wrapChips}>
         {METRICS.map((x) => (
           <Chip key={x.id} label={x.label} selected={metric === x.id} onPress={() => setMetric(x.id)} />
         ))}
-      </ScrollView>
+      </View>
       <BarChart
         data={range.buckets.map((b, i) => ({ ...b, value: values[i] }))}
         format={m.format}
@@ -393,11 +460,11 @@ function Moves({ range }: TabProps) {
         <Icon name="right" size={18} color={c.accent} />
       </Pressable>
       <Card title="PROGRESS">
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+        <View style={styles.wrapChips}>
           {METRICS.map((x) => (
             <Chip key={x.id} label={x.label} selected={metric === x.id} onPress={() => setMoveMetric(x.id)} />
           ))}
-        </ScrollView>
+        </View>
         <LineChart
           key={`${active}-${metric}-${range.from}`}
           points={series}
@@ -413,6 +480,140 @@ function Moves({ range }: TabProps) {
             : 'Tap the chart to read any day.'}
         </Text>
       </Card>
+      {active ? <MoveHistory exerciseId={active} kind={kind} range={range} /> : null}
+    </>
+  );
+}
+
+// ---------- Moves: every day the move was done ----------
+
+const HISTORY_PAGE = 10;
+
+function MoveHistory({ exerciseId, kind, range }: { exerciseId: string; kind: MoveKind; range: Range }) {
+  const c = useColors();
+  const days = useStore((s) => s.days);
+  const unit = useStore((s) => s.settings.unit);
+  const bodyweights = useStore((s) => s.bodyweights);
+  const bw = bodyweightOn(bodyweights, todayKey()) ?? NOMINAL_BODYWEIGHT[unit];
+  const [shown, setShown] = useState(HISTORY_PAGE);
+  const history = moveHistory(days, exerciseId, range.from, range.to, kind, bw);
+  if (!history.length) return null;
+
+  return (
+    <Card title="HISTORY" right={<Text style={[styles.cardLink, { color: c.textDim }]}>{history.length} days</Text>}>
+      {history.slice(0, shown).map((h, i) => (
+        <Pressable
+          key={h.date}
+          onPress={() => router.push({ pathname: '/workout/[date]', params: { date: h.date } })}
+          accessibilityRole="button"
+          style={({ pressed }) => [
+            styles.historyItem,
+            i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
+            pressed && { backgroundColor: c.surface2 },
+          ]}>
+          <View style={styles.historyHead}>
+            <Text style={[styles.workoutTitle, { color: c.text }]}>{shortLabel(h.date)}</Text>
+            {h.pr ? (
+              <View style={[styles.prTag, { backgroundColor: c.accentSoft }]}>
+                <Icon name="trophy" size={12} color={c.accent} />
+                <Text style={[styles.prTagText, { color: c.accent }]}>PR</Text>
+              </View>
+            ) : null}
+            <View style={{ flex: 1 }} />
+            {h.best ? (
+              <Text style={[styles.workoutStat, { color: c.text }]}>best {formatSet(h.best, unit)}</Text>
+            ) : null}
+          </View>
+          <Text style={[styles.historySets, { color: c.textDim }]}>
+            {h.sets.map((x) => formatSet(x, unit)).join('   ')}
+          </Text>
+        </Pressable>
+      ))}
+      {history.length > shown ? (
+        <Pressable onPress={() => setShown((n) => n + HISTORY_PAGE)} hitSlop={8} accessibilityRole="button">
+          <Text style={[styles.showMore, { color: c.accent }]}>Show more ({history.length - shown})</Text>
+        </Pressable>
+      ) : null}
+    </Card>
+  );
+}
+
+// ---------- Records: each move's best ----------
+
+function Records({ range }: TabProps) {
+  const c = useColors();
+  const days = useStore((s) => s.days);
+  const unit = useStore((s) => s.settings.unit);
+  const bodyweights = useStore((s) => s.bodyweights);
+  const { byId } = useExercises();
+  const { groups } = useGroups();
+  const bw = bodyweightOn(bodyweights, todayKey()) ?? NOMINAL_BODYWEIGHT[unit];
+  const records = moveRecords(days, range.from, range.to, (id) => byId.get(id)?.kind ?? 'weight', bw);
+
+  if (!records.length) {
+    return (
+      <Card title="RECORDS">
+        <Empty text="No sets logged in this period." />
+      </Card>
+    );
+  }
+
+  // By muscle group (in the usual order), then by name.
+  const sections = groups
+    .map((g) => ({
+      group: g,
+      rows: records
+        .filter((r) => byId.get(r.id)?.group === g.id)
+        .sort((a, b) => (byId.get(a.id)?.name ?? '').localeCompare(byId.get(b.id)?.name ?? '')),
+    }))
+    .filter((s) => s.rows.length);
+  const other = records.filter((r) => !sections.some((s) => s.rows.includes(r)));
+
+  const row = (r: MoveRecord, i: number) => {
+    const ex = byId.get(r.id);
+    return (
+      <Pressable
+        key={r.id}
+        onPress={() => router.push({ pathname: '/workout/[date]', params: { date: r.date } })}
+        accessibilityRole="button"
+        accessibilityHint="Opens the workout where you set it"
+        style={({ pressed }) => [
+          styles.recordRow,
+          i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
+          pressed && { backgroundColor: c.surface2 },
+        ]}>
+        <View style={{ flex: 1, gap: 2 }}>
+          <Text style={[styles.workoutTitle, { color: c.text }]} numberOfLines={1}>
+            {ex?.name ?? 'Deleted move'}
+          </Text>
+          <Text style={[styles.workoutMeta, { color: c.textDim, marginLeft: 0 }]}>{shortLabel(r.date)}</Text>
+        </View>
+        <View style={{ alignItems: 'flex-end', gap: 2 }}>
+          <Text style={[styles.recordValue, { color: c.text }]}>{formatSet(r.set, unit)}</Text>
+          {r.oneRM ? (
+            <Text style={[styles.workoutMeta, { color: c.textDim }]}>
+              1RM ~{fmt(Math.round(r.oneRM))} {unit}
+            </Text>
+          ) : null}
+        </View>
+      </Pressable>
+    );
+  };
+
+  return (
+    <>
+      {sections.map((s) => (
+        <Card
+          key={s.group.id}
+          title={s.group.name.toUpperCase()}
+          right={<View style={[styles.dot, { backgroundColor: s.group.color }]} />}>
+          {s.rows.map(row)}
+        </Card>
+      ))}
+      {other.length ? <Card title="OTHER">{other.map(row)}</Card> : null}
+      <Text style={[styles.note, { color: c.textFaint, textAlign: 'center' }]}>
+        Your best set of each move{range.title === 'All time' ? '' : ' in this period'}. Tap one to see that workout.
+      </Text>
     </>
   );
 }
@@ -433,7 +634,7 @@ function GoalCard() {
     <Card
       title="THIS WEEK"
       right={
-        <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
+        <Pressable onPress={() => router.push('/settings-workouts')} hitSlop={8}>
           <Text style={[styles.cardLink, { color: c.textDim }]}>Goal: {goal} a week</Text>
         </Pressable>
       }>
@@ -546,8 +747,12 @@ function Body({ range }: TabProps) {
         )}
       </Card>
 
+      <Card title="MEASUREMENTS">
+        <Measurements range={range} dateLabel={shortDate} />
+      </Card>
+
       {history.length ? (
-        <Card title="HISTORY">
+        <Card title="BODY WEIGHT HISTORY">
           {history.map((d, i) => (
             <View
               key={d}
@@ -597,8 +802,9 @@ function Empty({ text }: { text: string }) {
 const styles = StyleSheet.create({
   tabs: { flexDirection: 'row', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   tab: { flex: 1, alignItems: 'center', paddingTop: 6 },
-  tabText: { fontSize: 15, fontWeight: '700', paddingBottom: 8 },
-  tabLine: { height: 3, alignSelf: 'stretch', marginHorizontal: 12, borderRadius: 2 },
+  tabText: { fontSize: 14, fontWeight: '700', paddingBottom: 11, paddingHorizontal: 2 },
+  tabLineTrack: { position: 'absolute', left: 8, bottom: 0 },
+  tabLine: { height: 3, marginHorizontal: 12, borderRadius: 2 },
   periodBar: { paddingHorizontal: 16, paddingTop: 12, gap: 4 },
   segment: { flexDirection: 'row', borderRadius: radius.md, padding: 3 },
   segmentItem: { flex: 1, height: 34, borderRadius: radius.sm, alignItems: 'center', justifyContent: 'center' },
@@ -611,6 +817,8 @@ const styles = StyleSheet.create({
   sectionTitle: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8 },
   card: { borderRadius: radius.lg, borderWidth: 1, padding: 14, gap: 14 },
   chips: { gap: 8 },
+  // Chip rows wrap onto more lines (a sideways scroller would fight the page swipe).
+  wrapChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   movePicker: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -635,6 +843,14 @@ const styles = StyleSheet.create({
   workoutStat: { fontSize: 14, fontWeight: '800' },
   note: { fontSize: 13, lineHeight: 18 },
   cardLink: { fontSize: 12, fontWeight: '700' },
+  historyItem: { paddingVertical: 10, gap: 4 },
+  historyHead: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  historySets: { fontSize: 13, lineHeight: 19 },
+  prTag: { flexDirection: 'row', alignItems: 'center', gap: 3, paddingHorizontal: 7, height: 20, borderRadius: 10 },
+  prTagText: { fontSize: 11, fontWeight: '800' },
+  showMore: { fontSize: 14, fontWeight: '700', textAlign: 'center', paddingVertical: 6 },
+  recordRow: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 10 },
+  recordValue: { fontSize: 15, fontWeight: '800' },
   goalTop: { flexDirection: 'row', alignItems: 'center', gap: 12 },
   goalValue: { fontSize: 30, fontWeight: '800', fontVariant: ['tabular-nums'] },
   streak: {

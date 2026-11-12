@@ -2,10 +2,12 @@ import { router } from 'expo-router';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { GestureDetector, type PanGesture } from 'react-native-gesture-handler';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { ZoomIn } from 'react-native-reanimated';
 
 import { Icon } from '@/components/icon';
 import { Stepper, tick } from '@/components/stepper';
 import { Text } from '@/components/text';
+import { celebratePR } from '@/components/toast';
 import { IconButton } from '@/components/ui';
 import type { Exercise, MoveKind } from '@/data/exercises';
 import { confirmAction } from '@/lib/confirm';
@@ -13,11 +15,13 @@ import { best1RM, bestScored, fmt, isCounted, plateMath, plateText, setScore } f
 import {
   DEFAULT_DISPLAY,
   formatClock,
+  formatSet,
   formatWeight,
   useBar,
   useGroups,
   usePlates,
   useStore,
+  type Drop,
   type Entry,
   type Unit,
   type WorkoutSet,
@@ -42,6 +46,8 @@ type Props = {
   dragGesture?: PanGesture;
   /** The card is popped out (picked up): sets can be deleted and Done puts it down. */
   picked?: boolean;
+  /** Cards are being rearranged: values, checkboxes and buttons are locked. */
+  locked?: boolean;
   onPutDown?: () => void;
 };
 
@@ -60,6 +66,7 @@ export function ExerciseCard({
   canLinkUp = false,
   dragGesture,
   picked = false,
+  locked = false,
   onPutDown,
 }: Props) {
   const c = useColors();
@@ -164,7 +171,8 @@ export function ExerciseCard({
             <Text style={[styles.doneText, { color: c.onAccent }]}>Done</Text>
           </Pressable>
         ) : (
-          <>
+          // Locked (dimmed) while the cards are being rearranged.
+          <View style={[styles.headerButtons, locked && { opacity: 0.4 }]} pointerEvents={locked ? 'none' : 'auto'}>
             <IconButton name="calculator" size={20} color={c.textDim} label={`${name} tools`} onPress={openTools} />
             <IconButton
               name="delete"
@@ -177,7 +185,7 @@ export function ExerciseCard({
                 )
               }
             />
-          </>
+          </View>
         )}
       </View>
 
@@ -185,6 +193,7 @@ export function ExerciseCard({
       {display.oneRM && isWeight ? (
         <Pressable
           onPress={openTools}
+          disabled={locked}
           accessibilityRole="button"
           accessibilityLabel="Open 1RM calculator"
           style={({ pressed }) => [styles.stats, { backgroundColor: pressed ? c.surface2 : 'transparent' }]}>
@@ -230,11 +239,14 @@ export function ExerciseCard({
           set={s}
           prev={previous?.sets[i]}
           isPR={s.id === prSetId}
+          // Checking a set that beats an earlier record gets a small celebration.
+          onRecord={prevBestSet > 0 ? () => celebratePR(`${name} · ${formatSet(s, unit)}`) : undefined}
           kind={kind}
           bodyweight={bodyweight}
           unit={unit}
           bar={bar}
           editing={picked}
+          locked={locked}
           onDelete={() => deleteSet(s, i)}
         />
       ))}
@@ -257,6 +269,7 @@ export function ExerciseCard({
       ) : null}
 
       <Pressable
+        disabled={locked}
         onPress={() => {
           tick();
           addSet(date, entry.id);
@@ -264,6 +277,7 @@ export function ExerciseCard({
         accessibilityRole="button"
         style={({ pressed }) => [
           styles.addSet,
+          locked && styles.lockedControl,
           {
             backgroundColor: pressed ? c.surface2 : 'transparent',
             borderColor: c.border,
@@ -300,11 +314,13 @@ function SetRow({
   set,
   prev,
   isPR,
+  onRecord,
   kind,
   bodyweight,
   unit,
   bar,
   editing,
+  locked,
   onDelete,
 }: {
   index: number;
@@ -314,18 +330,25 @@ function SetRow({
   prev: WorkoutSet | undefined;
   /** This set beats every earlier set of the move. */
   isPR: boolean;
+  /** Called when this set is checked while it's a new record (not on a move's first day). */
+  onRecord?: () => void;
   kind: MoveKind;
   bodyweight: number;
   unit: Unit;
   bar: number | null;
   /** The card is popped out: the set number becomes a one-tap delete button. */
   editing: boolean;
+  /** Cards are being rearranged: the set can't be changed or checked. */
+  locked: boolean;
   onDelete: () => void;
 }) {
   const c = useColors();
   const updateSet = useStore((s) => s.updateSet);
   const stepSet = useStore((s) => s.stepSet);
   const toggleSetDone = useStore((s) => s.toggleSetDone);
+  const addDrop = useStore((s) => s.addDrop);
+  // Drop sets are for weight × reps and bodyweight moves.
+  const canDrop = kind === 'weight' || kind === 'bodyweight';
 
   // Green when this set beats the same set last time: more weight (or the same weight for more
   // reps); for timed and cardio moves, a longer time or distance.
@@ -366,9 +389,11 @@ function SetRow({
               <Text style={[styles.setBadgeText, { color: set.done ? c.onAccent : c.textDim }]}>{index + 1}</Text>
               {/* PR: a small trophy on the badge's corner, so it takes no extra space. */}
               {isPR ? (
-                <View style={[styles.prBadge, { backgroundColor: c.accent, borderColor: c.surface }]}>
+                <Animated.View
+                  entering={ZoomIn.duration(260)}
+                  style={[styles.prBadge, { backgroundColor: c.accent, borderColor: c.surface }]}>
                   <Icon name="trophy" size={10} color={c.onAccent} />
-                </View>
+                </Animated.View>
               ) : null}
             </View>
           )}
@@ -377,6 +402,7 @@ function SetRow({
         {kind === 'time' ? (
           // A hold: ±5 s per tap; type "90" or "1:30".
           <Stepper
+            disabled={locked}
             style={styles.colWide}
             mode="seconds"
             value={set.time ?? null}
@@ -390,6 +416,7 @@ function SetRow({
           <>
             {/* ±1 min per tap; type "25" (minutes) or "25:30". */}
             <Stepper
+              disabled={locked}
               style={styles.colWeight}
               mode="minutes"
               value={set.time ?? null}
@@ -400,6 +427,7 @@ function SetRow({
               onStep={(dir) => stepSet(date, entryId, set.id, 'time', dir * 60, prev?.time ?? null)}
             />
             <Stepper
+              disabled={locked}
               style={styles.colReps}
               decimal
               value={set.distance ?? null}
@@ -413,6 +441,7 @@ function SetRow({
         ) : (
           <>
             <Stepper
+              disabled={locked}
               style={styles.colWeight}
               value={set.weight}
               decimal
@@ -434,6 +463,7 @@ function SetRow({
               }
             />
             <Stepper
+              disabled={locked}
               style={styles.colReps}
               value={set.reps}
               placeholder={prev?.reps != null ? String(prev.reps) : '0'}
@@ -445,28 +475,63 @@ function SetRow({
           </>
         )}
 
-        <Pressable
-          onPress={() => {
-            tick('light');
-            toggleSetDone(date, entryId, set.id);
-          }}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: !!set.done }}
-          accessibilityLabel={`Set ${index + 1} done`}
-          hitSlop={4}
-          style={styles.colCheck}>
-          {/* Small rounded checkbox in the same style as the − / + boxes. */}
-          <View
-            style={[
-              styles.check,
-              set.done
-                ? { backgroundColor: c.accent, borderColor: c.accent }
-                : { backgroundColor: c.surface2, borderColor: c.border },
-            ]}>
-            {set.done ? <Icon name="check" size={16} color={c.onAccent} /> : null}
-          </View>
-        </Pressable>
+        {editing && canDrop ? (
+          // Popped out: add a drop set to this set (like the set number becomes delete).
+          <Pressable
+            onPress={() => {
+              tick('light');
+              addDrop(date, entryId, set.id);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel={`Add a drop set to set ${index + 1}`}
+            hitSlop={4}
+            style={styles.colCheck}>
+            <View style={[styles.check, styles.dropButton, { borderColor: c.accent, backgroundColor: c.accentSoft }]}>
+              <Icon name="drop" size={16} color={c.accent} />
+            </View>
+          </Pressable>
+        ) : (
+          <Pressable
+            onPress={() => {
+              if (!set.done && isPR && onRecord) onRecord();
+              else tick('light');
+              toggleSetDone(date, entryId, set.id);
+            }}
+            disabled={locked}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: !!set.done }}
+            accessibilityLabel={`Set ${index + 1} done`}
+            hitSlop={4}
+            style={[styles.colCheck, locked && styles.lockedControl]}>
+            {/* Small rounded checkbox in the same style as the − / + boxes. */}
+            <View
+              style={[
+                styles.check,
+                set.done
+                  ? { backgroundColor: c.accent, borderColor: c.accent }
+                  : { backgroundColor: c.surface2, borderColor: c.border },
+              ]}>
+              {set.done ? <Icon name="check" size={16} color={c.onAccent} /> : null}
+            </View>
+          </Pressable>
+        )}
       </View>
+
+      {/* Drop sets: lighter weight straight after the set, checked together with it. */}
+      {set.drops?.map((d, i) => (
+        <DropRow
+          key={i}
+          date={date}
+          entryId={entryId}
+          setId={set.id}
+          index={i}
+          drop={d}
+          kind={kind}
+          step={step}
+          locked={locked}
+          editing={editing}
+        />
+      ))}
 
       {/* Plates per side under the set, only when turned on in Settings. */}
       {plates ? (
@@ -476,6 +541,78 @@ function SetRow({
           </Text>
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/** One drop of a drop set: weight and reps, with a ✕ to remove it. */
+function DropRow({
+  date,
+  entryId,
+  setId,
+  index,
+  drop,
+  kind,
+  step,
+  locked,
+  editing,
+}: {
+  date: string;
+  entryId: string;
+  setId: string;
+  index: number;
+  drop: Drop;
+  kind: MoveKind;
+  step: number;
+  locked: boolean;
+  /** The card is popped out: the drop can be removed (its values stay locked). */
+  editing: boolean;
+}) {
+  const c = useColors();
+  const updateDrop = useStore((s) => s.updateDrop);
+  const stepDrop = useStore((s) => s.stepDrop);
+  const removeDrop = useStore((s) => s.removeDrop);
+  return (
+    <View style={[styles.row, styles.dropRow]}>
+      <View style={styles.colSet}>
+        <View style={[styles.dropBadge, { borderColor: c.border }]}>
+          <Icon name="drop" size={14} color={c.textDim} />
+        </View>
+      </View>
+      <Stepper
+        disabled={locked}
+        style={styles.colWeight}
+        height={38}
+        value={drop.weight}
+        decimal
+        label="drop weight"
+        onChange={(weight) => updateDrop(date, entryId, setId, index, { weight })}
+        onStep={(dir) => stepDrop(date, entryId, setId, index, 'weight', dir * step, kind === 'bodyweight' ? -500 : 0)}
+      />
+      <Stepper
+        disabled={locked}
+        style={styles.colReps}
+        height={38}
+        value={drop.reps}
+        label="drop reps"
+        onChange={(reps) => updateDrop(date, entryId, setId, index, { reps })}
+        onStep={(dir) => stepDrop(date, entryId, setId, index, 'reps', dir)}
+      />
+      <View
+        style={[styles.colCheck, locked && !editing && styles.lockedControl]}
+        pointerEvents={locked && !editing ? 'none' : 'auto'}>
+        <IconButton
+          compact
+          name="close"
+          size={18}
+          color={editing ? c.danger : c.textFaint}
+          label={`Remove drop ${index + 1}`}
+          onPress={() => {
+            tick('light');
+            removeDrop(date, entryId, setId, index);
+          }}
+        />
+      </View>
     </View>
   );
 }
@@ -544,6 +681,19 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     marginRight: 8,
   },
+  lockedControl: { opacity: 0.5 },
+  dropRow: { marginTop: 6 },
+  dropButton: { borderStyle: 'dashed' },
+  dropBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  headerButtons: { flexDirection: 'row', alignItems: 'center' },
   linkText: { fontSize: 14, fontWeight: '800' },
   // Sits in the page margin, left of the card, and reaches into the gaps between superset moves.
   supersetLine: { position: 'absolute', left: -11, width: 3, borderRadius: 2 },

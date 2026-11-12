@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react';
 import { Dimensions, View, type ScrollViewInstance } from 'react-native';
 import { usePanGesture, type PanGesture } from 'react-native-gesture-handler';
 import Animated, {
@@ -10,6 +11,14 @@ import Animated, {
 } from 'react-native-reanimated';
 
 import { tick } from '@/components/stepper';
+import { radius, useColors } from '@/theme';
+
+/** How close a dragged card may get to the top and bottom of the screen. */
+const EDGE = 8;
+
+function setRef<V>(ref: RefObject<V>, value: V) {
+  ref.current = value;
+}
 
 type Layout = { y: number; h: number };
 type ItemHandle = { offset: SharedValue<number>; setLifted: (lifted: boolean) => void };
@@ -30,6 +39,8 @@ export type PickState = {
   selected: boolean;
   /** Put the popped-out item back down where it is. */
   deselect: () => void;
+  /** Some item in the list is popped out (rearranging): the cards' values are locked. */
+  rearranging: boolean;
 };
 
 /**
@@ -46,7 +57,10 @@ export function DraggableList<T>({
   gap,
   scrollRef,
   scrollY,
+  viewport,
   onDragChange,
+  onPickChange,
+  active = true,
 }: {
   data: T[];
   keyOf: (item: T) => string;
@@ -58,10 +72,24 @@ export function DraggableList<T>({
   scrollRef: RefObject<ScrollViewInstance | null>;
   /** Current scroll offset of that ScrollView (kept up to date by the screen). */
   scrollY: RefObject<number>;
+  /** That ScrollView's visible height and content height (kept up to date by the screen). */
+  viewport: RefObject<{ height: number; content: number }>;
   onDragChange: (dragging: boolean) => void;
+  /** Called when rearranging starts (an item pops out) and ends (it's put down). */
+  onPickChange?: (picking: boolean) => void;
+  /** False when the list isn't on screen (another day is showing): any popped-out item is put down. */
+  active?: boolean;
 }) {
+  const c = useColors();
   const ids = data.map(keyOf);
   const layouts = useRef(new Map<string, Layout>());
+  // Where the list starts inside the scroll view's content.
+  const containerY = useRef(0);
+  // While dragging, a dashed outline shows the slot the card will land in.
+  const [draggingId, setDraggingId] = useState<string | null>(null);
+  const slotTop = useSharedValue(0);
+  const slotHeight = useSharedValue(0);
+  const slotStyle = useAnimatedStyle(() => ({ top: slotTop.value, height: slotHeight.value }));
   const items = useRef(new Map<string, ItemHandle>());
   const drag = useRef<DragState | null>(null);
   const autoScroll = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -84,14 +112,37 @@ export function DraggableList<T>({
 
   useEffect(() => () => stopAutoScroll(), []);
 
+  const maxScroll = () => Math.max(0, viewport.current.content - viewport.current.height);
+
+  /**
+   * Keep the held card on screen (a little in from the top and bottom edges) and within the
+   * list: it can't be dragged above the first move or below the last.
+   */
+  function clampOffset(held: Layout, dy: number) {
+    const vh = viewport.current.height;
+    if (vh > 0 && held.h < vh - EDGE * 2) {
+      const top = containerY.current + held.y;
+      dy = Math.max(dy, scrollY.current + EDGE - top);
+      dy = Math.min(dy, scrollY.current + vh - EDGE - held.h - top);
+    }
+    let bottom = 0;
+    for (const id of ids) {
+      const l = layouts.current.get(id);
+      if (l) bottom = Math.max(bottom, l.y + l.h);
+    }
+    dy = Math.max(dy, -held.y);
+    dy = Math.min(dy, bottom - held.h - held.y);
+    return dy;
+  }
+
   /** Move the held item to follow the finger and slide the others to make room. */
   function update() {
     const d = drag.current;
     if (!d) return;
-    const dy = d.translation + (scrollY.current - d.startScroll);
     const held = layouts.current.get(d.id);
     const it = items.current.get(d.id);
     if (!held || !it) return;
+    const dy = clampOffset(held, d.translation + (scrollY.current - d.startScroll));
     it.offset.value = dy;
 
     const center = held.y + held.h / 2 + dy;
@@ -100,6 +151,12 @@ export function DraggableList<T>({
       const l = layouts.current.get(id);
       return l ? l.y + l.h / 2 < center : false;
     }).length;
+    if (target !== d.target) {
+      // Move the landing outline to the new slot.
+      let y = 0;
+      for (const id of others.slice(0, target)) y += (layouts.current.get(id)?.h ?? 0) + gap;
+      slotTop.set(withTiming(y, { duration: 160 }));
+    }
     d.target = target;
 
     const step = held.h + gap;
@@ -129,7 +186,8 @@ export function DraggableList<T>({
       if (d.absoluteY < topZone) speed = -Math.min(18, (topZone - d.absoluteY) / 6 + 4);
       else if (d.absoluteY > bottomZone) speed = Math.min(18, (d.absoluteY - bottomZone) / 6 + 4);
       if (!speed) return;
-      const next = Math.max(0, scrollY.current + speed);
+      // Never past the ends of the page, so the card and the scroll stay in step.
+      const next = Math.min(maxScroll(), Math.max(0, scrollY.current + speed));
       if (next === scrollY.current) return;
       scrollY.current = next;
       sv.scrollTo({ y: next, animated: false });
@@ -142,6 +200,23 @@ export function DraggableList<T>({
     if (from < 0) return;
     tick('light');
     setSelected(id);
+    onDragChange(true);
+    // A card that's partly off screen scrolls fully into view when it's picked up (a card
+    // taller than the screen shows its top).
+    const held = layouts.current.get(id);
+    const sv = scrollRef.current;
+    const vh = viewport.current.height;
+    if (held && sv && vh > 0) {
+      const top = containerY.current + held.y;
+      let next = scrollY.current;
+      if (held.h > vh - EDGE * 2 || top < next + EDGE) next = top - EDGE;
+      else if (top + held.h > next + vh - EDGE) next = top + held.h - vh + EDGE;
+      next = Math.min(maxScroll(), Math.max(0, next));
+      if (next !== scrollY.current) {
+        setRef(scrollY, next);
+        sv.scrollTo({ y: next, animated: false });
+      }
+    }
     drag.current = {
       id,
       from,
@@ -151,8 +226,12 @@ export function DraggableList<T>({
       target: from,
       shifts: new Map(),
     };
+    if (held) {
+      slotTop.set(held.y);
+      slotHeight.set(held.h);
+    }
+    setDraggingId(id);
     items.current.get(id)?.setLifted(true);
-    onDragChange(true);
     startAutoScroll();
   };
 
@@ -169,6 +248,7 @@ export function DraggableList<T>({
     if (!d || d.id !== id) return;
     stopAutoScroll();
     drag.current = null;
+    setDraggingId(null);
     items.current.get(id)?.setLifted(false);
     onDragChange(false);
     // The item stays popped out (selected) after the finger lifts.
@@ -188,8 +268,57 @@ export function DraggableList<T>({
     setSelected(null);
   };
 
+  /**
+   * Leave pick mode quietly: a card being dragged is dropped where it is now, and the
+   * popped-out card is put down.
+   */
+  const putDown = () => {
+    if (drag.current) end(drag.current.id);
+    setSelected(null);
+  };
+  const putDownRef = useRef(putDown);
+  useEffect(() => {
+    putDownRef.current = putDown;
+  });
+
+  // Going to another screen (or another day) puts the card down where it is.
+  useFocusEffect(useCallback(() => () => putDownRef.current(), []));
+  useEffect(() => {
+    if (!active) putDownRef.current();
+  }, [active]);
+
+  // Tell the screen when rearranging starts and stops (it pauses the day swipe meanwhile).
+  const picking = selectedId != null;
+  const onPickChangeRef = useRef(onPickChange);
+  useEffect(() => {
+    onPickChangeRef.current = onPickChange;
+  });
+  useEffect(() => {
+    onPickChangeRef.current?.(picking);
+  }, [picking]);
+  useEffect(() => () => onPickChangeRef.current?.(false), []);
+
   return (
-    <View style={{ gap }}>
+    <View style={{ gap }} onLayout={(e) => (containerY.current = e.nativeEvent.layout.y)}>
+      {/* Where the dragged card will land: the gap the other cards leave for it. */}
+      {draggingId ? (
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: 'absolute',
+              left: 0,
+              right: 0,
+              borderRadius: radius.lg,
+              borderWidth: 2,
+              borderStyle: 'dashed',
+              borderColor: c.accent,
+              backgroundColor: c.accentSoft,
+            },
+            slotStyle,
+          ]}
+        />
+      ) : null}
       {data.map((item) => {
         const id = keyOf(item);
         return (
@@ -203,7 +332,7 @@ export function DraggableList<T>({
             onStart={start}
             onMove={move}
             onEnd={end}>
-            {(gesture) => renderItem(item, gesture, { selected: selectedId === id, deselect })}
+            {(gesture) => renderItem(item, gesture, { selected: selectedId === id, deselect, rearranging: picking })}
           </DragItem>
         );
       })}
@@ -239,7 +368,7 @@ function DragItem({
 
   // Pop out a little while picked up.
   useEffect(() => {
-    scale.value = withSpring(up ? 1.03 : 1, { damping: 16, stiffness: 260 });
+    scale.value = withSpring(up ? 1.02 : 1, { damping: 16, stiffness: 260 });
   }, [up, scale]);
 
   useEffect(() => {
@@ -249,8 +378,10 @@ function DragItem({
   }, []);
 
   const gesture = usePanGesture({
-    // Hold the handle to pick the card up; a quick swipe still scrolls.
+    // Hold the handle to pick the card up; a quick swipe still scrolls. Moving sideways before
+    // the hold kicks in is a day swipe, so the pick-up is cancelled.
     activateAfterLongPress: 300,
+    failOffsetX: [-12, 12],
     runOnJS: true,
     onActivate: () => onStart(id),
     onUpdate: (e) => onMove(id, e.translationY, e.absoluteY),

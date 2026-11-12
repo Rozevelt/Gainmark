@@ -33,10 +33,13 @@ export function Stepper({
   label,
   style,
   height = 44,
+  disabled = false,
 }: {
   value: number | null;
   onChange: (v: number | null) => void;
   onStep: (dir: 1 | -1) => void;
+  /** Locked: shown dimmed, can't be stepped or typed in. */
+  disabled?: boolean;
   decimal?: boolean;
   /** Overrides `decimal`; 'seconds' / 'minutes' show the value as a clock. */
   mode?: NumberMode;
@@ -53,8 +56,10 @@ export function Stepper({
       style={[
         styles.stepper,
         { height, backgroundColor: c.surface2, borderColor: focused ? c.accent : 'transparent' },
+        disabled && { opacity: 0.5 },
         style,
-      ]}>
+      ]}
+      pointerEvents={disabled ? 'none' : 'auto'}>
       <StepButton icon="minus" label={`Less ${label}`} onStep={() => onStep(-1)} />
       <NumField
         value={value}

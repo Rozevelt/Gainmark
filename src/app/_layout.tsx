@@ -8,6 +8,8 @@ import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DialogHost } from '@/components/dialog-host';
+import { LiveTimerHost } from '@/components/live-timer-host';
+import { ToastHost } from '@/components/toast';
 import { APP_FONTS } from '@/components/text';
 import { autoBackup } from '@/lib/backup';
 import { syncReminders } from '@/lib/reminders';
@@ -82,9 +84,14 @@ export default function RootLayout() {
         <Stack.Screen name="progress" />
         <Stack.Screen name="pick-move" options={{ presentation: 'modal' }} />
         <Stack.Screen name="backups" />
+        <Stack.Screen name="template-edit" options={{ presentation: 'modal' }} />
+        <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'fade' }} />
+        <Stack.Screen name="tutorial" options={{ animation: 'fade' }} />
         <Stack.Screen name="workout/[date]" />
       </Stack>
       <DialogHost />
+      <ToastHost />
+      <LiveTimerHost />
     </ThemeProvider>
     </GestureHandlerRootView>
   );

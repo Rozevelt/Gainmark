@@ -1,11 +1,13 @@
 import { router } from 'expo-router';
-import { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
-import { Calendar } from 'react-native-calendars';
+import { useMemo, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { CalendarList } from 'react-native-calendars';
+import type { CalendarListImperativeMethods } from 'react-native-calendars/src/calendar-list';
 import type { MarkedDates } from 'react-native-calendars/src/types';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fontFor, Text } from '@/components/text';
+import { showProgressed } from '@/components/toast';
 import { formatMinutes } from '@/components/workout-timer';
 import { Button, IconButton, ScreenHeader } from '@/components/ui';
 import { confirmAction } from '@/lib/confirm';
@@ -30,6 +32,12 @@ export default function CalendarScreen() {
 
   const [selected, setSelected] = useState(viewDate);
   const [month, setMonth] = useState(viewDate.slice(0, 7));
+  // The month pages are as wide as the card (screen minus its margins and border).
+  const { width } = useWindowDimensions();
+  const calendarWidth = width - 32 - 2;
+  const listRef = useRef<CalendarListImperativeMethods>(null);
+  // Opened on the day being viewed; later months are swiped to, not re-mounted.
+  const [startMonth] = useState(viewDate.slice(0, 7));
 
   // One dot per muscle group trained that day, in the group's colour.
   const marked = useMemo(() => {
@@ -68,7 +76,7 @@ export default function CalendarScreen() {
   const canCopy = hasWorkout && !targetBusy;
 
   const copy = () => {
-    copyWorkout(selected, target, 'replace');
+    showProgressed(copyWorkout(selected, target, 'replace'));
     setViewDate(target);
     router.back();
   };
@@ -87,6 +95,7 @@ export default function CalendarScreen() {
               onPress={() => {
                 setSelected(todayKey());
                 setMonth(todayKey().slice(0, 7));
+                listRef.current?.scrollToMonth(todayKey());
               }}
               style={{ paddingHorizontal: 10 }}
             />
@@ -96,15 +105,25 @@ export default function CalendarScreen() {
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
         <View style={[styles.calendarCard, { backgroundColor: c.surface, borderColor: c.border }]}>
-          <Calendar
-            key={`${isDark}-${month}`}
-            current={`${month}-01`}
+          {/* Months sit side by side: swipe left or right and the next month follows the finger. */}
+          <CalendarList
+            ref={listRef}
+            key={`${isDark}-${c.accent}`}
+            current={`${startMonth}-01`}
+            horizontal
+            pagingEnabled
+            staticHeader
+            calendarWidth={calendarWidth}
+            calendarHeight={360}
+            pastScrollRange={120}
+            futureScrollRange={24}
             firstDay={1}
-            enableSwipeMonths
             markingType="multi-dot"
             markedDates={marked}
             onDayPress={(d) => setSelected(d.dateString)}
-            onMonthChange={(d) => setMonth(d.dateString.slice(0, 7))}
+            onVisibleMonthsChange={(months) => {
+              if (months[0]) setMonth(months[0].dateString.slice(0, 7));
+            }}
             theme={{
               calendarBackground: c.surface,
               dayTextColor: c.text,
@@ -181,8 +200,8 @@ export default function CalendarScreen() {
             </Text>
           ) : hasWorkout && targetBusy ? (
             <Text style={[styles.hint, { color: c.textFaint }]}>
-              {targetLabel} already has moves, so this workout can&apos;t be copied there. Copying only works
-              onto an empty day.
+              {targetLabel} already has moves, so this workout can&apos;t be copied there. Copying only works onto an
+              empty day.
             </Text>
           ) : null}
           {entries.length ? (
@@ -210,7 +229,6 @@ export default function CalendarScreen() {
               })}
             </View>
           ) : null}
-
         </View>
       </ScrollView>
     </View>

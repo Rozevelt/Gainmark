@@ -44,3 +44,6 @@ example
 
 # Built app
 *.apk
+
+# Native build output of local modules
+modules/*/android/build/

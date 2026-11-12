@@ -3,9 +3,21 @@ import type { Entry, Unit, WorkoutSet } from '@/store/store';
 
 type Days = Record<string, Entry[]>;
 
-/** One set's volume: weight × reps (0 if either is missing). */
+/** One set's volume: weight × reps (0 if either is missing). Drops aren't included. */
 export function setVolume(s: WorkoutSet): number {
   return s.weight && s.weight > 0 && s.reps ? s.weight * s.reps : 0;
+}
+
+/** A set's volume including its drops. */
+export function setTotalVolume(s: WorkoutSet): number {
+  let v = setVolume(s);
+  for (const d of s.drops ?? []) if (d.weight && d.weight > 0 && d.reps) v += d.weight * d.reps;
+  return v;
+}
+
+/** A set's reps including its drops. */
+export function setTotalReps(s: WorkoutSet): number {
+  return (s.reps ?? 0) + (s.drops ?? []).reduce((n, d) => n + (d.reps ?? 0), 0);
 }
 
 /** A set counts once something was logged in it (reps, a time or a distance). */

@@ -3,7 +3,11 @@ import type { Group } from '@/data/groups';
 import type { Entry } from '@/store/store';
 
 /** The day's muscle groups, most-trained first. */
-export function dayGroups(entries: Entry[], byId: Map<string, Exercise>, groupById: Map<string, Group>): Group[] {
+export function dayGroups(
+  entries: Pick<Entry, 'exerciseId'>[],
+  byId: Map<string, Exercise>,
+  groupById: Map<string, Group>,
+): Group[] {
   const counts = new Map<string, number>();
   for (const e of entries) {
     const g = byId.get(e.exerciseId)?.group;
@@ -14,7 +18,7 @@ export function dayGroups(entries: Entry[], byId: Map<string, Exercise>, groupBy
 
 /** "Legs · Core" — the day's main groups. */
 export function groupSummary(
-  entries: Entry[],
+  entries: Pick<Entry, 'exerciseId'>[],
   byId: Map<string, Exercise>,
   groupById: Map<string, Group>,
   max = 3,
@@ -25,7 +29,7 @@ export function groupSummary(
     .join(' · ');
 }
 
-export function movesCount(entries: Entry[]) {
+export function movesCount(entries: Pick<Entry, 'sets'>[]) {
   const sets = entries.reduce((n, e) => n + e.sets.length, 0);
   return `${entries.length} ${entries.length === 1 ? 'move' : 'moves'} · ${sets} ${sets === 1 ? 'set' : 'sets'}`;
 }

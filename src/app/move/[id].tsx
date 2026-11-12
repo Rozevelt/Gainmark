@@ -222,7 +222,7 @@ export default function MoveToolsScreen() {
                 </View>
                 <Toggle value={warmupOn} onValueChange={(on) => setExerciseWarmup(id, on)} />
               </View>
-              <Pressable onPress={() => router.push('/settings')} hitSlop={8}>
+              <Pressable onPress={() => router.push('/settings-cards')} hitSlop={8}>
                 <Text style={[styles.link, { color: c.accent }]}>Change warm-up steps in Settings</Text>
               </Pressable>
             </Section>

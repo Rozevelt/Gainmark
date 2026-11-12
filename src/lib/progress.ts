@@ -1,7 +1,7 @@
-import type { Exercise } from '@/data/exercises';
+import type { Exercise, MoveKind } from '@/data/exercises';
 import type { Group } from '@/data/groups';
 import { addDays, fromKey, toKey, todayKey } from '@/lib/dates';
-import { best1RM, bestSet, isCounted } from '@/lib/stats';
+import { best1RM, bestScored, bestSet, isCounted, setTotalReps, setTotalVolume } from '@/lib/stats';
 import type { Entry, Session, WorkoutSet } from '@/store/store';
 
 type Days = Record<string, Entry[]>;
@@ -213,8 +213,8 @@ export function dayTotals(entries: Entry[] | undefined, session: Session | undef
     for (const s of e.sets) {
       if (!counted(s)) continue;
       sets += 1;
-      reps += s.reps ?? 0;
-      volume += Math.max(0, s.weight ?? 0) * (s.reps ?? 0);
+      reps += setTotalReps(s);
+      volume += setTotalVolume(s);
     }
   }
   const time = session?.logged && session.end ? (session.end - session.start) / 60000 : 0;
@@ -270,8 +270,7 @@ export function groupBreakdown(
       const g = byId.get(e.exerciseId)?.group;
       if (!g || !groupById.has(g)) continue;
       const done = e.sets.filter(counted);
-      const amount =
-        by === 'sets' ? done.length : done.reduce((n, s) => n + Math.max(0, s.weight ?? 0) * (s.reps ?? 0), 0);
+      const amount = by === 'sets' ? done.length : done.reduce((n, s) => n + setTotalVolume(s), 0);
       totals.set(g, (totals.get(g) ?? 0) + amount);
     }
   }
@@ -296,9 +295,9 @@ export function moveValue(sets: WorkoutSet[], metric: MoveMetric): number {
     case 'bestSet':
       return bestSet(done).value;
     case 'volume':
-      return done.reduce((n, s) => n + Math.max(0, s.weight ?? 0) * (s.reps ?? 0), 0);
+      return done.reduce((n, s) => n + setTotalVolume(s), 0);
     case 'reps':
-      return done.reduce((n, s) => n + (s.reps ?? 0), 0);
+      return done.reduce((n, s) => n + setTotalReps(s), 0);
     case 'bestReps':
       return Math.max(0, ...done.map((s) => s.reps ?? 0));
     case 'longest':
@@ -326,6 +325,84 @@ export function moveSeries(
     points.push({ date: d, value: moveValue(sets, metric) });
   }
   return points;
+}
+
+export type MoveSession = {
+  date: string;
+  /** The sets that were logged (with something in them). */
+  sets: WorkoutSet[];
+  /** The best set of the day (see setScore). */
+  best: WorkoutSet | null;
+  /** That best set beat every earlier day of the move. */
+  pr: boolean;
+};
+
+/** Every day a move was logged in [from, to], newest first, with its best set and PRs. */
+export function moveHistory(
+  days: Days,
+  exerciseId: string,
+  from: string,
+  to: string,
+  kind: MoveKind,
+  bodyweight: number,
+): MoveSession[] {
+  const out: MoveSession[] = [];
+  // PRs are judged against everything before, not just the range.
+  let record = 0;
+  for (const d of Object.keys(days).sort()) {
+    if (d > to) break;
+    const sets = days[d]
+      .filter((e) => e.exerciseId === exerciseId)
+      .flatMap((e) => e.sets)
+      .filter(counted);
+    if (!sets.length) continue;
+    const best = bestScored(sets, kind, bodyweight);
+    const pr = best.value > 0 && best.value > record;
+    record = Math.max(record, best.value);
+    if (d >= from) out.push({ date: d, sets, best: best.set, pr });
+  }
+  return out.reverse();
+}
+
+export type MoveRecord = {
+  id: string;
+  /** The best set in the range, and the day it was done. */
+  set: WorkoutSet;
+  date: string;
+  /** Best estimated 1RM in the range (weight moves). */
+  oneRM: number;
+};
+
+/** Each move's best set in [from, to] (see setScore). */
+export function moveRecords(
+  days: Days,
+  from: string,
+  to: string,
+  kindOf: (exerciseId: string) => MoveKind,
+  bodyweight: number,
+): MoveRecord[] {
+  const best = new Map<string, MoveRecord & { score: number }>();
+  for (const d of Object.keys(days)) {
+    if (d < from || d > to) continue;
+    for (const e of days[d]) {
+      const sets = e.sets.filter(counted);
+      if (!sets.length) continue;
+      const kind = kindOf(e.exerciseId);
+      const top = bestScored(sets, kind, bodyweight);
+      const oneRM = kind === 'weight' ? best1RM(sets).value : 0;
+      const cur = best.get(e.exerciseId);
+      if (top.set && (!cur || top.value > cur.score))
+        best.set(e.exerciseId, {
+          id: e.exerciseId,
+          set: top.set,
+          date: d,
+          score: top.value,
+          oneRM: Math.max(oneRM, cur?.oneRM ?? 0),
+        });
+      else if (cur && oneRM > cur.oneRM) cur.oneRM = oneRM;
+    }
+  }
+  return [...best.values()].map(({ score: _score, ...r }) => r);
 }
 
 /** Moves logged in the range, most-logged first. */

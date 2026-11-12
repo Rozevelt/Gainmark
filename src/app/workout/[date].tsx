@@ -11,7 +11,7 @@ import { IconButton, ScreenHeader } from '@/components/ui';
 import { formatMinutes } from '@/components/workout-timer';
 import { longLabel } from '@/lib/dates';
 import { compact, dayTotals, groupBreakdown, type ShareBy } from '@/lib/progress';
-import { bestScored, bestSetBefore, fmt, isCounted, NOMINAL_BODYWEIGHT } from '@/lib/stats';
+import { bestScored, bestSetBefore, fmt, isCounted, NOMINAL_BODYWEIGHT, setTotalVolume } from '@/lib/stats';
 import { bodyweightOn, formatSet, useExercises, useGroups, useSortedDates, useStore } from '@/store/store';
 import { radius, useColors } from '@/theme';
 
@@ -102,7 +102,7 @@ export default function WorkoutAnalysisScreen() {
                 const group = ex ? groupById.get(ex.group) : undefined;
                 const done = e.sets.filter(isCounted);
                 const top = bestScored(done, kindOf(e.exerciseId), bw);
-                const vol = done.reduce((n, s) => n + Math.max(0, s.weight ?? 0) * (s.reps ?? 0), 0);
+                const vol = done.reduce((n, s) => n + setTotalVolume(s), 0);
                 return (
                   <View
                     key={e.id}

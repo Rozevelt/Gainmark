@@ -79,19 +79,25 @@ export function WorkoutTimer({ date, hasMoves }: { date: string; hasMoves: boole
   }
 
   return (
-    <Pressable
-      // A logged time stays on the day; long-press to remove it.
-      onLongPress={
-        logged
-          ? () => confirmAction('Delete workout time?', 'Remove the logged time for this day?', 'Delete', () => resetWorkout(date))
-          : undefined
-      }
-      accessibilityHint={logged ? 'Long-press to delete the logged time' : undefined}
-      style={styles.line}>
+    <View style={styles.line}>
       <Icon name="timer" size={16} color={logged ? c.accent : c.textDim} />
       <Text style={[styles.time, { color: c.text }]}>{formatDuration(elapsed)}</Text>
       {logged ? (
-        <Icon name="check" size={16} color={c.accent} />
+        <>
+          <Icon name="check" size={16} color={c.accent} />
+          {/* A logged time stays on the day until it's deleted here. */}
+          <TextButton
+            icon="delete"
+            label="Delete logged time"
+            color={c.textFaint}
+            onPress={() =>
+              confirmAction('Delete workout time?', 'Remove the logged time for this day?', 'Delete', () =>
+                resetWorkout(date),
+              )
+            }
+            iconOnly
+          />
+        </>
       ) : (
         <>
           {isToday ? (
@@ -101,7 +107,7 @@ export function WorkoutTimer({ date, hasMoves }: { date: string; hasMoves: boole
           <TextButton icon="check" label="Log" color={c.accent} onPress={() => logWorkout(date)} />
         </>
       )}
-    </Pressable>
+    </View>
   );
 }
 
