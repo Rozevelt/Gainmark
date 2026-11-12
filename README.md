@@ -1,56 +1,37 @@
-# Welcome to your Expo app 👋
+# Gainmark
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A gym workout tracker for Android. Log your moves, sets, weights and reps for each day, copy past
+workouts to beat them, and follow your progress in Statistics.
 
-## Get started
+Made by Rasmus Brunila ([@Rozevelt](https://github.com/Rozevelt)).
 
-1. Install dependencies
+## Install (Android)
 
-   ```bash
-   npm install
-   ```
+1. Open the [latest release](https://github.com/Rozevelt/Gainmark/releases/latest) on your phone.
+2. Download the `.apk` file and open it. Android may ask you to allow installs from your browser.
+3. When a new version comes out, Gainmark tells you and offers the download. Updates keep your data.
 
-2. Start the app
+Your workouts stay on your phone. Settings → Your data can export them to a file and back them up.
 
-   ```bash
-   npx expo start
-   ```
+## Features
 
-In the output, you'll find options to open the app in a
+- Big move library by muscle group, plus your own moves and groups
+- Weight, bodyweight, timed and cardio moves; drop sets and supersets
+- Copy a past workout or start a saved one, with optional auto progression
+- Workout timer, rest timer and a lock-screen timer
+- Statistics: trends, muscle split, move history, records, training heatmap, body weight and measurements
+- Weekly goal and streaks, gym split with reminders, PRs, plate calculator, 1RM and warm-up sets
+- Dark and light themes with several accent colours
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+## Development
 
-You can start developing by editing the files inside the **src/app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+Expo (React Native) with TypeScript and Expo Router; screens are in `src/app`.
 
 ```bash
-npm run reset-project
+npm install
+npx expo start --go     # run in Expo Go
+npm run apk             # build a release APK and install it on a phone over USB
+npm run release         # publish a new version as a GitHub Release
 ```
 
-This command will move the starter code to the **example** directory and create a blank **src/app** directory where you can start developing.
-
-### Other setup steps
-
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+Release builds are signed with a key kept outside the project (see `scripts/make-signing-key.ps1`).
