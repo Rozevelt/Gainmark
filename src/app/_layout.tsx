@@ -8,6 +8,7 @@ import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DialogHost } from '@/components/dialog-host';
+import { InstallGate, needsInstall } from '@/components/install-gate';
 import { LiveTimerHost } from '@/components/live-timer-host';
 import { ToastHost } from '@/components/toast';
 import { APP_FONTS } from '@/components/text';
@@ -65,6 +66,9 @@ export default function RootLayout() {
   }, [dataReady, split, reminder, groupById]);
 
   if (!ready) return null;
+
+  // Web on a phone, in a browser tab: show how to add it to the Home Screen instead.
+  if (needsInstall()) return <InstallGate />;
 
   const base = isDark ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, background: c.bg, card: c.bg, primary: c.accent } };

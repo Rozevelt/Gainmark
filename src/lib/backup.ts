@@ -28,7 +28,12 @@ export type StoredBackup = {
 };
 
 function toJson(): string {
-  const file: BackupFile = { app: 'gainmark', version: FORMAT_VERSION, exportedAt: new Date().toISOString(), data: getAppData() };
+  const file: BackupFile = {
+    app: 'gainmark',
+    version: FORMAT_VERSION,
+    exportedAt: new Date().toISOString(),
+    data: getAppData(),
+  };
   return JSON.stringify(file);
 }
 
@@ -100,6 +105,10 @@ export function summaryText(s: BackupSummary) {
  */
 export async function exportToFolder(): Promise<string | null> {
   const name = `gainmark-${todayKey()}.json`;
+  if (Platform.OS === 'web') {
+    await webSave(toJson(), name);
+    return null;
+  }
   if (Platform.OS !== 'android') {
     await shareExport();
     return null;
@@ -117,6 +126,7 @@ export async function exportToFolder(): Promise<string | null> {
 
 /** Send the export file with the share sheet (Drive, email, messages…). */
 export async function shareExport(): Promise<void> {
+  if (Platform.OS === 'web') return webSave(toJson(), `gainmark-${todayKey()}.json`);
   const file = new File(Paths.cache, `gainmark-${todayKey()}.json`);
   if (file.exists) file.delete();
   file.create();
@@ -124,8 +134,50 @@ export async function shareExport(): Promise<void> {
   await Sharing.shareAsync(file.uri, { mimeType: MIME, dialogTitle: 'Gainmark data', UTI: 'public.json' });
 }
 
+// ---------- web (home-screen app on iPhone) ----------
+
+/** Save a file from the web app: the share sheet where there is one (iPhone: Save to Files), else a download. */
+async function webSave(text: string, name: string): Promise<void> {
+  const blob = new Blob([text], { type: MIME });
+  const file = new globalThis.File([blob], name, { type: MIME });
+  if (typeof navigator !== 'undefined' && navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: 'Gainmark data' });
+    } catch {
+      // Share sheet closed.
+    }
+    return;
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+/** Pick a file in the web app and read it as text; null if the picker is closed. */
+function webPickText(): Promise<string | null> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json,application/json,text/plain';
+    input.onchange = () => {
+      const f = input.files?.[0];
+      if (!f) return resolve(null);
+      f.text().then(resolve, () => resolve(null));
+    };
+    input.addEventListener('cancel', () => resolve(null));
+    input.click();
+  });
+}
+
 /** Let the user pick a file and read it. Returns null if they cancel. */
 export async function pickImportFile(): Promise<AppData | null> {
+  if (Platform.OS === 'web') {
+    const text = await webPickText();
+    return text == null ? null : parseBackup(text);
+  }
   const picked = await File.pickFileAsync({ mimeTypes: [MIME, 'text/plain', '*/*'] });
   if (picked.canceled) return null;
   return parseBackup(await picked.result.text());
@@ -133,7 +185,8 @@ export async function pickImportFile(): Promise<AppData | null> {
 
 /** Replace all data, keeping a backup of what was there first so it can be undone. */
 export async function restoreData(data: AppData): Promise<void> {
-  if (summarize(getAppData()).workouts > 0) await writeBackup('before-import');
+  // The web version has no backup folder; there, an export is the way back.
+  if (Platform.OS !== 'web' && summarize(getAppData()).workouts > 0) await writeBackup('before-import');
   await useStore.getState().replaceAllData(data);
 }
 
@@ -198,7 +251,7 @@ export function deleteBackup(b: StoredBackup) {
 export async function autoBackup(): Promise<void> {
   if (Platform.OS === 'web') return;
   const s = useStore.getState();
-  if (!s.ready || !({ ...DEFAULT_BACKUP, ...s.settings.backup }.auto)) return;
+  if (!s.ready || !{ ...DEFAULT_BACKUP, ...s.settings.backup }.auto) return;
   if (!Object.keys(s.days).length) return;
   try {
     await writeBackup('daily');

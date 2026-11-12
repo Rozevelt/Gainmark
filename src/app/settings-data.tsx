@@ -1,4 +1,5 @@
 import { router } from 'expo-router';
+import { Platform } from 'react-native';
 
 import { NavRow, Row, Section, SettingsPage } from '@/components/settings-ui';
 import { exportToFolder, pickImportFile, restoreData, shareExport, summarize, summaryText } from '@/lib/backup';
@@ -21,15 +22,18 @@ export default function DataSettings() {
         <NavRow icon="upload" label="Import data" sub="Load a Gainmark file" onPress={importData} last />
       </Section>
 
-      <Section title="ON THIS PHONE">
-        <NavRow
-          icon="backup"
-          label="Backups"
-          sub={backupOn ? 'Daily, on this phone' : 'Daily backups are off'}
-          onPress={() => router.push('/backups')}
-          last
-        />
-      </Section>
+      {/* The web app has no backup folder; Export is how to keep a copy there. */}
+      {Platform.OS !== 'web' ? (
+        <Section title="ON THIS PHONE">
+          <NavRow
+            icon="backup"
+            label="Backups"
+            sub={backupOn ? 'Daily, on this phone' : 'Daily backups are off'}
+            onPress={() => router.push('/backups')}
+            last
+          />
+        </Section>
+      ) : null}
 
       <Section title="HELP">
         <NavRow label="Replay tutorial" sub="A quick tour of the app" onPress={() => router.push('/tutorial')} last />

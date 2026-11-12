@@ -25,7 +25,11 @@
     },
     "web": {
       "output": "single",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/images/favicon.png",
+      "name": "Gainmark",
+      "shortName": "Gainmark",
+      "themeColor": "#111111",
+      "backgroundColor": "#111111"
     },
     "plugins": [
       "expo-router",
@@ -51,7 +55,8 @@
     ],
     "experiments": {
       "typedRoutes": true,
-      "reactCompiler": true
+      "reactCompiler": true,
+      "baseUrl": "/Gainmark"
     }
   }
 }

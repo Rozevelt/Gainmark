@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { Linking, View } from 'react-native';
+import { Linking, Platform, View } from 'react-native';
 
 import { NavRow, Row, Section, SettingsPage, settingsStyles } from '@/components/settings-ui';
 import { Text } from '@/components/text';
@@ -72,7 +72,8 @@ export default function SettingsScreen() {
 
       <Section title="ABOUT">
         <Row label="Gainmark" value={`v${appVersion()}`} />
-        <NavRow label="Check for updates" onPress={checkForUpdateNow} />
+        {/* The web app is always the newest version; the Android app checks GitHub. */}
+        {Platform.OS !== 'web' ? <NavRow label="Check for updates" onPress={checkForUpdateNow} /> : null}
         <NavRow
           label="Gainmark on GitHub"
           sub="github.com/Rozevelt/Gainmark"

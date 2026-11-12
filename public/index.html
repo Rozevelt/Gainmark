@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
+    <!-- viewport-fit=cover: the app draws under the status bar and home indicator, like a native app. -->
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <title>Gainmark</title>
+
+    <!-- Home-screen app (iPhone and Android): opens fullscreen, without the browser's bars. -->
+    <meta name="theme-color" content="#111111" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Gainmark" />
+    <link rel="manifest" href="/Gainmark/manifest.json" />
+    <link rel="apple-touch-icon" href="/Gainmark/apple-touch-icon.png" />
+    <link rel="icon" type="image/png" href="/Gainmark/icon-192.png" />
+
+    <style id="expo-reset">
+      html,
+      body {
+        height: 100%;
+        background-color: #111111;
+      }
+      body {
+        overflow: hidden;
+        /* No rubber-band bounce or pull-to-refresh on the whole page. */
+        overscroll-behavior: none;
+        /* Feel like an app: no grey tap flashes, no text selection or "Copy" menu on long-press
+           (long-press is used to pick up move cards). Typing in fields still works. */
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        -webkit-user-select: none;
+        user-select: none;
+        -webkit-text-size-adjust: 100%;
+      }
+      input,
+      textarea {
+        -webkit-user-select: text;
+        user-select: text;
+      }
+      #root {
+        display: flex;
+        height: 100%;
+        flex: 1;
+      }
+    </style>
+    <script>
+      // Offline support: keeps the app working without a connection.
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function () {
+          navigator.serviceWorker.register('/Gainmark/sw.js', { scope: '/Gainmark/' }).catch(function () {});
+        });
+      }
+    </script>
+  </head>
+
+  <body>
+    <noscript>You need to enable JavaScript to run Gainmark.</noscript>
+    <div id="root"></div>
+  </body>
+</html>

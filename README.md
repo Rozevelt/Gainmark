@@ -14,6 +14,17 @@ Made by Rasmus Brunila ([@Rozevelt](https://github.com/Rozevelt)).
 2. Download the `.apk` file and open it. Android may ask you to allow installs from your browser.
 3. When a new version comes out, Gainmark tells you and offers the download. Updates keep your data.
 
+## Install (iPhone)
+
+Gainmark runs on iPhone as a Home Screen app, fullscreen and offline:
+
+1. Open **https://rozevelt.github.io/Gainmark/** in Safari.
+2. Tap the Share button, then **Add to Home Screen**, then **Add**.
+3. Open Gainmark from your Home Screen. It updates by itself when a new version comes out.
+
+The iPhone version has no lock-screen timer, vibration, or rest alert while the app is closed.
+Deleting its Home Screen icon deletes its data, so use Settings → Your data → Export now and then.
+
 Your workouts stay on your phone. Settings → Your data can export them to a file and back them up.
 
 ## Features

@@ -1,3 +1,5 @@
+import { Platform } from 'react-native';
+
 import { PillStepper, Row, Section, SettingsPage } from '@/components/settings-ui';
 import { Toggle } from '@/components/toggle';
 import { requestReminderPermission } from '@/lib/reminders';
@@ -28,18 +30,20 @@ export default function TimerSettings() {
         </Row>
       </Section>
 
-      <Section title="LOCK SCREEN">
-        <Row
-          label="Timer on lock screen"
-          sub={
-            liveTimerAvailable
-              ? 'Rest countdown, or the workout timer, in your notifications'
-              : 'Works in the installed app, not in Expo Go'
-          }
-          last>
-          <Toggle value={liveTimer} onValueChange={(on) => setSettingsFlags({ liveTimer: on })} />
-        </Row>
-      </Section>
+      {Platform.OS === 'android' ? (
+        <Section title="LOCK SCREEN">
+          <Row
+            label="Timer on lock screen"
+            sub={
+              liveTimerAvailable
+                ? 'Rest countdown, or the workout timer, in your notifications'
+                : 'Works in the installed app, not in Expo Go'
+            }
+            last>
+            <Toggle value={liveTimer} onValueChange={(on) => setSettingsFlags({ liveTimer: on })} />
+          </Row>
+        </Section>
+      ) : null}
 
       <Section title="REST TIMER">
         <Row label="Start when a set is checked">
