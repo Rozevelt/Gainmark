@@ -27,7 +27,7 @@ $password = -join ($bytes | ForEach-Object { $chars[$_ % $chars.Length] })
 $jdk = Get-ChildItem 'C:\Program Files\Eclipse Adoptium' -Directory -Filter 'jdk-21*' | Sort-Object Name -Descending | Select-Object -First 1
 $keytool = Join-Path $jdk.FullName 'bin\keytool.exe'
 & $keytool -genkeypair -v -storetype PKCS12 -keystore $store -alias gainmark -keyalg RSA -keysize 2048 -validity 10000 `
-  -storepass $password -keypass $password -dname 'CN=Rasmus Brunila, O=Gainmark, C=FI'
+  -storepass $password -keypass $password -dname 'CN=Gainmark, O=Gainmark'
 if ($LASTEXITCODE -ne 0) { throw 'keytool failed' }
 
 $storePath = $store -replace '\\', '/'

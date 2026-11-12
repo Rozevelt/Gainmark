@@ -3,7 +3,7 @@
 A gym workout tracker for Android. Log your moves, sets, weights and reps for each day, copy past
 workouts to beat them, and follow your progress in Statistics.
 
-Made by Rasmus Brunila ([@Rozevelt](https://github.com/Rozevelt)).
+Made by [@Rozevelt](https://github.com/Rozevelt).
 
 > **Built with AI.** The code in this project was written by AI ([Claude](https://claude.com/claude-code)
 > by Anthropic), not by hand.

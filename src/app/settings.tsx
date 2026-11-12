@@ -79,7 +79,7 @@ export default function SettingsScreen() {
           sub="github.com/Rozevelt/Gainmark"
           onPress={() => Linking.openURL(REPO_URL)}
         />
-        <Row label="Made by" value="Rasmus Brunila" last />
+        <Row label="Made by" value="Rozevelt" last />
       </Section>
 
       <Text style={[settingsStyles.footnote, { color: c.textFaint }]}>

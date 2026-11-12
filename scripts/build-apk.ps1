@@ -34,7 +34,7 @@ if ($NoInstall) { exit 0 }
 
 Write-Host '=== 3/3 Install on the phone ==='
 $adb = Get-Command adb -ErrorAction SilentlyContinue
-$adbPath = if ($adb) { $adb.Source } else { 'C:\Users\rasmu.RASMUS\Downloads\scrcpy-win64-v3.3.3\scrcpy-win64-v3.3.3\adb.exe' }
+$adbPath = if ($adb) { $adb.Source } else { Join-Path $env:USERPROFILE 'Downloads\scrcpy-win64-v3.3.3\scrcpy-win64-v3.3.3\adb.exe' }
 & $adbPath install -r (Join-Path $root 'gainmark.apk')
 if ($LASTEXITCODE -ne 0) {
   Write-Host 'Built, but installing failed. Is the phone plugged in and unlocked?'
