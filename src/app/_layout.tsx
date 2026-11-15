@@ -3,7 +3,7 @@ import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 import * as SystemUI from 'expo-system-ui';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { AppState } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
@@ -23,6 +23,8 @@ SplashScreen.preventAutoHideAsync();
 export default function RootLayout() {
   const c = useColors();
   const isDark = useIsDark();
+  // Web on a phone: chose to use it in the browser instead of adding it to the home screen.
+  const [inBrowser, setInBrowser] = useState(false);
   const dataReady = useStore((s) => s.ready);
   const split = useStore((s) => s.settings.split);
   const reminder = useStore((s) => s.settings.reminder);
@@ -68,38 +70,38 @@ export default function RootLayout() {
   if (!ready) return null;
 
   // Web on a phone, in a browser tab: show how to add it to the Home Screen instead.
-  if (needsInstall()) return <InstallGate />;
+  if (!inBrowser && needsInstall()) return <InstallGate onContinue={() => setInBrowser(true)} />;
 
   const base = isDark ? DarkTheme : DefaultTheme;
   const theme = { ...base, colors: { ...base.colors, background: c.bg, card: c.bg, primary: c.accent } };
 
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
-    <ThemeProvider value={theme}>
-      <StatusBar style={isDark ? 'light' : 'dark'} />
-      <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
-        <Stack.Screen name="index" />
-        <Stack.Screen name="calendar" />
-        <Stack.Screen name="settings" />
-        <Stack.Screen name="add-exercise" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="new-exercise" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="move/[id]" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="groups" />
-        <Stack.Screen name="group-edit" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="split" />
-        <Stack.Screen name="timer" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="progress" />
-        <Stack.Screen name="pick-move" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="backups" />
-        <Stack.Screen name="template-edit" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'fade' }} />
-        <Stack.Screen name="tutorial" options={{ animation: 'fade' }} />
-        <Stack.Screen name="workout/[date]" />
-      </Stack>
-      <DialogHost />
-      <ToastHost />
-      <LiveTimerHost />
-    </ThemeProvider>
+      <ThemeProvider value={theme}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: c.bg } }}>
+          <Stack.Screen name="index" />
+          <Stack.Screen name="calendar" />
+          <Stack.Screen name="settings" />
+          <Stack.Screen name="add-exercise" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="new-exercise" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="move/[id]" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="groups" />
+          <Stack.Screen name="group-edit" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="split" />
+          <Stack.Screen name="timer" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="progress" />
+          <Stack.Screen name="pick-move" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="backups" />
+          <Stack.Screen name="template-edit" options={{ presentation: 'modal' }} />
+          <Stack.Screen name="welcome" options={{ gestureEnabled: false, animation: 'fade' }} />
+          <Stack.Screen name="tutorial" options={{ animation: 'fade' }} />
+          <Stack.Screen name="workout/[date]" />
+        </Stack>
+        <DialogHost />
+        <ToastHost />
+        <LiveTimerHost />
+      </ThemeProvider>
     </GestureHandlerRootView>
   );
 }

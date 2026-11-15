@@ -11,9 +11,31 @@ import { radius, useColors } from '@/theme';
 export function needsInstall(): boolean {
   if (Platform.OS !== 'web' || typeof window === 'undefined') return false;
   const nav = window.navigator as Navigator & { standalone?: boolean };
-  const standalone = nav.standalone === true || window.matchMedia?.('(display-mode: standalone)').matches;
+  // Opened from the home screen (browsers call it standalone, fullscreen or minimal-ui).
+  const installed =
+    nav.standalone === true ||
+    ['standalone', 'fullscreen', 'minimal-ui'].some((m) => window.matchMedia?.(`(display-mode: ${m})`).matches);
   const phone = /iPhone|iPad|iPod|Android/i.test(nav.userAgent);
-  return phone && !standalone;
+  return phone && !installed && !usesBrowser();
+}
+
+/** Someone chose to use Gainmark in the browser anyway (some browsers can't add it fullscreen). */
+const BROWSER_KEY = 'gainmark:useInBrowser';
+
+function usesBrowser() {
+  try {
+    return window.localStorage.getItem(BROWSER_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function rememberBrowser() {
+  try {
+    window.localStorage.setItem(BROWSER_KEY, '1');
+  } catch {
+    // Private mode: it just asks again next time.
+  }
 }
 
 /** Built-in browsers of other apps: they can't add anything to the Home Screen. */
@@ -97,7 +119,7 @@ function stepsFor(b: Browser): string[] {
  * Shown instead of the app when it's opened in a browser tab on a phone: Gainmark runs from
  * the home screen, fullscreen. The steps match the browser it's opened in.
  */
-export function InstallGate() {
+export function InstallGate({ onContinue }: { onContinue: () => void }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
   const [browser] = useState(detectBrowser);
@@ -180,6 +202,17 @@ export function InstallGate() {
           />
         </>
       ) : null}
+
+      {/* A way in for browsers that can't add it to the home screen as an app. */}
+      <Pressable
+        onPress={() => {
+          rememberBrowser();
+          onContinue();
+        }}
+        hitSlop={8}
+        accessibilityRole="button">
+        <Text style={[styles.link, { color: c.textDim }]}>Use it in the browser instead</Text>
+      </Pressable>
 
       <Pressable onPress={() => Linking.openURL(REPO_URL)} hitSlop={8} accessibilityRole="link">
         <Text style={[styles.link, { color: c.textFaint }]}>github.com/Rozevelt/Gainmark</Text>
