@@ -8,6 +8,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { fontFor, Text } from '@/components/text';
 import { showProgressed } from '@/components/toast';
+import { useWebSwipe, webSwipe } from '@/lib/web-swipe';
 import { formatMinutes } from '@/components/workout-timer';
 import { Button, IconButton, ScreenHeader } from '@/components/ui';
 import { confirmAction } from '@/lib/confirm';
@@ -15,6 +16,10 @@ import { agoLabel, longLabel, relativeLabel, todayKey } from '@/lib/dates';
 import { dayGroups, movesCount } from '@/lib/summary';
 import { formatSet, useExercises, useGroups, useStore } from '@/store/store';
 import { radius, useColors, useIsDark } from '@/theme';
+
+/** How far the calendar reaches back and forward, in months. */
+const PAST_MONTHS = 120;
+const FUTURE_MONTHS = 24;
 
 export default function CalendarScreen() {
   const c = useColors();
@@ -38,6 +43,28 @@ export default function CalendarScreen() {
   const listRef = useRef<CalendarListImperativeMethods>(null);
   // Opened on the day being viewed; later months are swiped to, not re-mounted.
   const [startMonth] = useState(viewDate.slice(0, 7));
+  // Web: a calmer swipe between months (see useWebSwipe); it jumps a month at a time.
+  const monthIndex = (m: string) => {
+    const [y0, m0] = startMonth.split('-').map(Number);
+    const [y1, m1] = m.split('-').map(Number);
+    return PAST_MONTHS + (y1 - y0) * 12 + (m1 - m0);
+  };
+  const monthAt = (i: number) => {
+    const [y0, m0] = startMonth.split('-').map(Number);
+    const d = new Date(y0, m0 - 1 + i - PAST_MONTHS, 1);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  };
+  const monthSwipe = useWebSwipe({
+    width: calendarWidth,
+    count: PAST_MONTHS + FUTURE_MONTHS + 1,
+    getPage: () => monthIndex(month),
+    onSwipe: (i) => {
+      const m = monthAt(i);
+      if (m === month) return;
+      setMonth(m);
+      listRef.current?.scrollToMonth(`${m}-01`);
+    },
+  });
 
   // One dot per muscle group trained that day, in the group's colour.
   const marked = useMemo(() => {
@@ -104,10 +131,17 @@ export default function CalendarScreen() {
       />
 
       <ScrollView contentContainerStyle={{ paddingBottom: insets.bottom + 24 }}>
-        <View style={[styles.calendarCard, { backgroundColor: c.surface, borderColor: c.border }]}>
+        <View
+          style={[
+            styles.calendarCard,
+            { backgroundColor: c.surface, borderColor: c.border },
+            webSwipe && styles.swipeArea,
+          ]}
+          {...monthSwipe}>
           {/* Months sit side by side: swipe left or right and the next month follows the finger. */}
           <CalendarList
             ref={listRef}
+            scrollEnabled={!webSwipe}
             key={`${isDark}-${c.accent}`}
             current={`${startMonth}-01`}
             horizontal
@@ -115,8 +149,8 @@ export default function CalendarScreen() {
             staticHeader
             calendarWidth={calendarWidth}
             calendarHeight={360}
-            pastScrollRange={120}
-            futureScrollRange={24}
+            pastScrollRange={PAST_MONTHS}
+            futureScrollRange={FUTURE_MONTHS}
             firstDay={1}
             markingType="multi-dot"
             markedDates={marked}
@@ -236,6 +270,7 @@ export default function CalendarScreen() {
 }
 
 const styles = StyleSheet.create({
+  swipeArea: { touchAction: 'pan-y' } as object,
   calendarCard: {
     marginHorizontal: 16,
     borderRadius: radius.lg,

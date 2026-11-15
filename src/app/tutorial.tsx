@@ -14,6 +14,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, type IconName } from '@/components/icon';
 import { Text } from '@/components/text';
 import { Button } from '@/components/ui';
+import { useWebSwipe, webSwipe } from '@/lib/web-swipe';
 import { radius, useColors, type Colors } from '@/theme';
 
 /** `logo` shows the app icon instead of `icon`. */
@@ -129,6 +130,14 @@ export default function TutorialScreen() {
   const last = page === SLIDES.length - 1;
 
   const finish = () => (router.canGoBack() ? router.back() : router.replace('/'));
+  // Web: a calmer swipe between cards (see useWebSwipe).
+  const cardSwipe = useWebSwipe({
+    width,
+    count: SLIDES.length,
+    getPage: () => page,
+    scrollTo: (x, animated) => pager.current?.scrollTo({ x, animated }),
+    onSwipe: setPage,
+  });
   const next = () => {
     if (last) return finish();
     pager.current?.scrollTo({ x: (page + 1) * width, animated: true });
@@ -148,28 +157,31 @@ export default function TutorialScreen() {
         ) : null}
       </View>
 
-      <ScrollView
-        ref={pager}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
-        style={{ flex: 1 }}>
-        {SLIDES.map((s) => (
-          <View key={s.title} style={[styles.slide, { width }]}>
-            {s.logo ? (
-              <Image source={require('@/assets/images/icon.png')} style={styles.logo} />
-            ) : (
-              <View style={[styles.iconCircle, { backgroundColor: c.accentSoft }]}>
-                <Icon name={s.icon} size={44} color={c.accent} />
-              </View>
-            )}
-            <Text style={[styles.title, { color: c.text }]}>{s.title}</Text>
-            <Text style={[styles.body, { color: c.textDim }]}>{s.body}</Text>
-            {s.picture ? <View style={styles.picture}>{s.picture(c)}</View> : null}
-          </View>
-        ))}
-      </ScrollView>
+      <View style={styles.pager} {...cardSwipe}>
+        <ScrollView
+          ref={pager}
+          horizontal
+          pagingEnabled
+          scrollEnabled={!webSwipe}
+          showsHorizontalScrollIndicator={false}
+          onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+          style={{ flex: 1 }}>
+          {SLIDES.map((s) => (
+            <View key={s.title} style={[styles.slide, { width }]}>
+              {s.logo ? (
+                <Image source={require('@/assets/images/icon.png')} style={styles.logo} />
+              ) : (
+                <View style={[styles.iconCircle, { backgroundColor: c.accentSoft }]}>
+                  <Icon name={s.icon} size={44} color={c.accent} />
+                </View>
+              )}
+              <Text style={[styles.title, { color: c.text }]}>{s.title}</Text>
+              <Text style={[styles.body, { color: c.textDim }]}>{s.body}</Text>
+              {s.picture ? <View style={styles.picture}>{s.picture(c)}</View> : null}
+            </View>
+          ))}
+        </ScrollView>
+      </View>
 
       <View style={styles.dots}>
         {SLIDES.map((s, i) => (
@@ -187,6 +199,7 @@ export default function TutorialScreen() {
 }
 
 const styles = StyleSheet.create({
+  pager: { flex: 1, touchAction: 'pan-y' } as object,
   top: {
     flexDirection: 'row',
     justifyContent: 'space-between',

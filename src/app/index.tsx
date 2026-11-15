@@ -4,7 +4,6 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
-  Platform,
   Pressable,
   ScrollView,
   type ScrollViewInstance,
@@ -19,6 +18,7 @@ import { ExerciseCard } from '@/components/exercise-card';
 import { DraggableList } from '@/components/draggable-list';
 import { REST_BAR_HEIGHT, RestTimerBar } from '@/components/rest-timer-bar';
 import { showProgressed } from '@/components/toast';
+import { useWebSwipe, webSwipe } from '@/lib/web-swipe';
 import { WarmupCard } from '@/components/warmup-card';
 import { WorkoutTimer } from '@/components/workout-timer';
 import { Icon } from '@/components/icon';
@@ -64,15 +64,9 @@ export default function DayScreen() {
 
   const listRef = useRef<FlatList<number>>(null);
   const currentPage = useRef(pageOf(date));
-  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
-  /**
-   * A swipe ended at `x`: show that day. On the web the page is also snapped exactly onto the
-   * day, in case the browser left it part-way.
-   */
-  const settle = (x: number, snap = false) => {
+  /** A swipe ended at `x`: show that day. */
+  const settle = (x: number) => {
     const page = Math.round(x / width);
-    if (snap && Math.abs(x - page * width) > 1)
-      listRef.current?.scrollToOffset({ offset: page * width, animated: true });
     if (page === currentPage.current) return;
     currentPage.current = page;
     setViewDate(dateAt(page));
@@ -84,6 +78,15 @@ export default function DayScreen() {
   // While a card is popped out (rearranging), the day swipe is paused too.
   const [picking, setPicking] = useState(false);
   const pagerLocked = dragging || picking;
+  // Web: a calmer swipe between days (see useWebSwipe).
+  const daySwipe = useWebSwipe({
+    width,
+    count: PAGE_COUNT,
+    getPage: () => currentPage.current,
+    scrollTo: (x, animated) => listRef.current?.scrollToOffset({ offset: x, animated }),
+    onSwipe: (page) => settle(page * width),
+    enabled: !pagerLocked,
+  });
 
   // Pausing the swipe can catch the pager part-way between two days; settle it back on the day
   // whenever rearranging starts or stops.
@@ -159,48 +162,40 @@ export default function DayScreen() {
         <IconButton name="right" size={36} label="Next day" onPress={() => goTo(addDays(date, 1))} />
       </View>
 
-      <FlatList
-        ref={listRef}
-        data={pages}
-        horizontal
-        pagingEnabled
-        decelerationRate="fast"
-        showsHorizontalScrollIndicator={false}
-        keyExtractor={(page) => String(page)}
-        getItemLayout={(_, index) => ({
-          length: width,
-          offset: width * index,
-          index,
-        })}
-        initialScrollIndex={initialPage}
-        initialNumToRender={1}
-        maxToRenderPerBatch={2}
-        windowSize={3}
-        scrollEnabled={!pagerLocked}
-        keyboardShouldPersistTaps="handled"
-        onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.x)}
-        // The web never says when a swipe has ended, so there the day changes once scrolling stops.
-        onScroll={
-          Platform.OS === 'web'
-            ? (e) => {
-                const x = e.nativeEvent.contentOffset.x;
-                if (settleTimer.current) clearTimeout(settleTimer.current);
-                settleTimer.current = setTimeout(() => settle(x, true), 160);
-              }
-            : undefined
-        }
-        scrollEventThrottle={16}
-        renderItem={({ item }) => (
-          <DayPage
-            date={dateAt(item)}
-            width={width}
-            current={dateAt(item) === date}
-            onDragChange={setDragging}
-            onPickChange={setPicking}
-          />
-        )}
-        style={{ flex: 1 }}
-      />
+      {/* On the web, swiping is handled by useWebSwipe (calmer than the browser's own paging). */}
+      <View style={styles.pager} {...daySwipe}>
+        <FlatList
+          ref={listRef}
+          data={pages}
+          horizontal
+          pagingEnabled
+          decelerationRate="fast"
+          showsHorizontalScrollIndicator={false}
+          keyExtractor={(page) => String(page)}
+          getItemLayout={(_, index) => ({
+            length: width,
+            offset: width * index,
+            index,
+          })}
+          initialScrollIndex={initialPage}
+          initialNumToRender={1}
+          maxToRenderPerBatch={2}
+          windowSize={3}
+          scrollEnabled={!webSwipe && !pagerLocked}
+          keyboardShouldPersistTaps="handled"
+          onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.x)}
+          renderItem={({ item }) => (
+            <DayPage
+              date={dateAt(item)}
+              width={width}
+              current={dateAt(item) === date}
+              onDragChange={setDragging}
+              onPickChange={setPicking}
+            />
+          )}
+          style={{ flex: 1 }}
+        />
+      </View>
       <RestTimerBar />
     </View>
   );
@@ -595,6 +590,7 @@ const TIMER_GAP = 8;
 const TIMER_ROW = 36 + TIMER_GAP;
 
 const styles = StyleSheet.create({
+  pager: { flex: 1, touchAction: 'pan-y' } as object,
   brand: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -38,6 +38,7 @@ import {
 } from '@/lib/progress';
 import type { MoveKind } from '@/data/exercises';
 import { useProgressMove } from '@/lib/progress-pick';
+import { useWebSwipe, webSwipe } from '@/lib/web-swipe';
 import { fmt, NOMINAL_BODYWEIGHT } from '@/lib/stats';
 import { dayGroups } from '@/lib/summary';
 import {
@@ -106,6 +107,18 @@ export default function ProgressScreen() {
   });
   const tabW = (width - 16) / TABS.length;
   const lineStyle = useAnimatedStyle(() => ({ transform: [{ translateX: (scrollX.value / width) * tabW }] }));
+  // Web: a calmer swipe between tabs (see useWebSwipe).
+  const tabSwipe = useWebSwipe({
+    width,
+    count: TABS.length,
+    getPage: () =>
+      Math.max(
+        0,
+        TABS.findIndex((t) => t.id === tab),
+      ),
+    scrollTo: (x, animated) => pagerRef.current?.scrollTo({ x, animated }),
+    onSwipe: (i) => setTab(TABS[i].id),
+  });
   const goToTab = (i: number) => {
     setTab(TABS[i].id);
     pagerRef.current?.scrollTo({ x: i * width, animated: true });
@@ -175,32 +188,35 @@ export default function ProgressScreen() {
         </View>
       </View>
 
-      <Animated.ScrollView
-        ref={pagerRef}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        onScroll={onPagerScroll}
-        scrollEventThrottle={16}
-        onMomentumScrollEnd={(e) => {
-          const i = Math.round(e.nativeEvent.contentOffset.x / width);
-          if (TABS[i]) setTab(TABS[i].id);
-        }}
-        style={{ flex: 1 }}>
-        {TABS.map((t) => (
-          <ScrollView
-            key={t.id}
-            style={{ width }}
-            contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
-            {t.id === 'overview' ? <Overview range={range} prev={prev} /> : null}
-            {t.id === 'trends' ? <Trends range={range} prev={prev} /> : null}
-            {t.id === 'muscles' ? <Muscles range={range} prev={prev} /> : null}
-            {t.id === 'moves' ? <Moves range={range} prev={prev} /> : null}
-            {t.id === 'records' ? <Records range={range} prev={prev} /> : null}
-            {t.id === 'body' ? <Body range={range} prev={prev} /> : null}
-          </ScrollView>
-        ))}
-      </Animated.ScrollView>
+      <View style={styles.pager} {...tabSwipe}>
+        <Animated.ScrollView
+          ref={pagerRef}
+          horizontal
+          pagingEnabled
+          scrollEnabled={!webSwipe}
+          showsHorizontalScrollIndicator={false}
+          onScroll={onPagerScroll}
+          scrollEventThrottle={16}
+          onMomentumScrollEnd={(e) => {
+            const i = Math.round(e.nativeEvent.contentOffset.x / width);
+            if (TABS[i]) setTab(TABS[i].id);
+          }}
+          style={{ flex: 1 }}>
+          {TABS.map((t) => (
+            <ScrollView
+              key={t.id}
+              style={{ width }}
+              contentContainerStyle={[styles.content, { paddingBottom: insets.bottom + 32 }]}>
+              {t.id === 'overview' ? <Overview range={range} prev={prev} /> : null}
+              {t.id === 'trends' ? <Trends range={range} prev={prev} /> : null}
+              {t.id === 'muscles' ? <Muscles range={range} prev={prev} /> : null}
+              {t.id === 'moves' ? <Moves range={range} prev={prev} /> : null}
+              {t.id === 'records' ? <Records range={range} prev={prev} /> : null}
+              {t.id === 'body' ? <Body range={range} prev={prev} /> : null}
+            </ScrollView>
+          ))}
+        </Animated.ScrollView>
+      </View>
     </View>
   );
 }
@@ -800,6 +816,7 @@ function Empty({ text }: { text: string }) {
 }
 
 const styles = StyleSheet.create({
+  pager: { flex: 1, touchAction: 'pan-y' } as object,
   tabs: { flexDirection: 'row', paddingHorizontal: 8, borderBottomWidth: StyleSheet.hairlineWidth },
   tab: { flex: 1, alignItems: 'center', paddingTop: 6 },
   tabText: { fontSize: 14, fontWeight: '700', paddingBottom: 11, paddingHorizontal: 2 },
