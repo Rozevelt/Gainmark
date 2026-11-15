@@ -4,12 +4,13 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Platform,
   Pressable,
   ScrollView,
+  type ScrollViewInstance,
   StyleSheet,
   useWindowDimensions,
   View,
-  type ScrollViewInstance,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -63,6 +64,19 @@ export default function DayScreen() {
 
   const listRef = useRef<FlatList<number>>(null);
   const currentPage = useRef(pageOf(date));
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /**
+   * A swipe ended at `x`: show that day. On the web the page is also snapped exactly onto the
+   * day, in case the browser left it part-way.
+   */
+  const settle = (x: number, snap = false) => {
+    const page = Math.round(x / width);
+    if (snap && Math.abs(x - page * width) > 1)
+      listRef.current?.scrollToOffset({ offset: page * width, animated: true });
+    if (page === currentPage.current) return;
+    currentPage.current = page;
+    setViewDate(dateAt(page));
+  };
   const [initialPage] = useState(() => pageOf(date));
   const pages = useMemo(() => Array.from({ length: PAGE_COUNT }, (_, i) => i), []);
   // While a move card is held, sideways scrolling pauses so the drag isn't stolen.
@@ -164,12 +178,18 @@ export default function DayScreen() {
         windowSize={3}
         scrollEnabled={!pagerLocked}
         keyboardShouldPersistTaps="handled"
-        onMomentumScrollEnd={(e) => {
-          const page = Math.round(e.nativeEvent.contentOffset.x / width);
-          if (page === currentPage.current) return;
-          currentPage.current = page;
-          setViewDate(dateAt(page));
-        }}
+        onMomentumScrollEnd={(e) => settle(e.nativeEvent.contentOffset.x)}
+        // The web never says when a swipe has ended, so there the day changes once scrolling stops.
+        onScroll={
+          Platform.OS === 'web'
+            ? (e) => {
+                const x = e.nativeEvent.contentOffset.x;
+                if (settleTimer.current) clearTimeout(settleTimer.current);
+                settleTimer.current = setTimeout(() => settle(x, true), 160);
+              }
+            : undefined
+        }
+        scrollEventThrottle={16}
         renderItem={({ item }) => (
           <DayPage
             date={dateAt(item)}
