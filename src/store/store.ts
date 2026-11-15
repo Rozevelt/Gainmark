@@ -63,7 +63,7 @@ export const DEFAULT_GOAL: GoalSettings = { perWeek: 3 };
 
 /** Look: dark / light / follow the phone, and the accent colour (see ACCENTS in theme.ts). */
 export type ThemeSettings = { mode: 'system' | 'dark' | 'light'; accent: string };
-export const DEFAULT_THEME: ThemeSettings = { mode: 'system', accent: 'lime' };
+export const DEFAULT_THEME: ThemeSettings = { mode: 'dark', accent: 'lime' };
 
 /**
  * A saved workout: its moves with their sets (values included), to start a day from.

@@ -6,7 +6,7 @@ import { Icon } from '@/components/icon';
 import { PillStepper } from '@/components/settings-ui';
 import { Text } from '@/components/text';
 import { Button } from '@/components/ui';
-import { DEFAULT_THEME, useGoal, useStore, type Unit } from '@/store/store';
+import { DEFAULT_THEME, useGoal, useStore, type Unit, type ThemeSettings } from '@/store/store';
 import { ACCENTS, palette, radius, useColors, useIsDark } from '@/theme';
 
 /** First launch: pick a unit, a weekly goal and a colour. Everything can be changed later. */
@@ -65,7 +65,22 @@ export default function WelcomeScreen() {
           />
         </Step>
 
-        <Step number={3} title="Colour">
+        <Step number={3} title="Look">
+          {/* Dark, light, or follow the phone's setting; the whole app (and the tutorial) follows it. */}
+          <View style={[styles.segment, { backgroundColor: c.surface2 }]}>
+            {MODES.map((m) => (
+              <Pressable
+                key={m.id}
+                onPress={() => setTheme({ mode: m.id })}
+                accessibilityRole="button"
+                accessibilityState={{ selected: theme.mode === m.id }}
+                style={[styles.modeItem, theme.mode === m.id && { backgroundColor: c.accent }]}>
+                <Text style={[styles.segmentText, { color: theme.mode === m.id ? c.onAccent : c.text }]}>
+                  {m.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
           <View style={styles.swatches}>
             {ACCENTS.map((a) => {
               const p = palette(a.id, isDark);
@@ -122,7 +137,14 @@ function Step({
   );
 }
 
+const MODES: { id: ThemeSettings['mode']; label: string }[] = [
+  { id: 'dark', label: 'Dark' },
+  { id: 'light', label: 'Light' },
+  { id: 'system', label: 'Phone' },
+];
+
 const styles = StyleSheet.create({
+  modeItem: { paddingHorizontal: 16, height: 34, borderRadius: 6, justifyContent: 'center' },
   content: { paddingHorizontal: 20, gap: 14 },
   hero: { alignItems: 'center', gap: 10, marginBottom: 12 },
   logo: { width: 84, height: 84, borderRadius: 20 },
