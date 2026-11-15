@@ -1,11 +1,11 @@
 # Builds the web version of Gainmark (the iPhone home-screen app) and publishes it on GitHub Pages:
 # https://rozevelt.github.io/Gainmark/
-# Runs for every published release, or by hand from the Actions tab.
+# scripts/release.ps1 starts it after each release (from the main branch: the github-pages
+# environment only accepts deploys from there, not from release tags). It can also be run by hand
+# from the Actions tab.
 name: Web app
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
 
 permissions:

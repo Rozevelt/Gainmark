@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import Constants from 'expo-constants';
 import { Linking, Platform } from 'react-native';
 
+import { backupBeforeUpdate } from '@/lib/backup';
 import { choose, notify } from '@/lib/confirm';
 
 /** Where Gainmark lives on GitHub; new versions are published as GitHub Releases there. */
@@ -59,9 +60,15 @@ function offer(r: Release) {
   choose('Update available', `Gainmark ${r.version} is out (you have ${appVersion()}).${notes}`, [
     { text: 'Later', style: 'cancel' },
     {
-      // Android downloads the APK and installs it over this one (your data stays).
+      // Android downloads the APK and installs it over this one (your data stays). A backup is made
+      // first, so the data from before the update can be restored from Settings → Backups if needed.
       text: Platform.OS === 'android' && r.apkUrl ? 'Download' : 'Open',
-      onPress: () => Linking.openURL(Platform.OS === 'android' && r.apkUrl ? r.apkUrl : r.pageUrl),
+      onPress: async () => {
+        if (Platform.OS === 'android' && r.apkUrl) {
+          await backupBeforeUpdate();
+          Linking.openURL(r.apkUrl);
+        } else Linking.openURL(r.pageUrl);
+      },
     },
   ]);
 }

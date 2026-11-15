@@ -15,7 +15,7 @@ import { ToastHost } from '@/components/toast';
 import { UndoBar } from '@/components/undo-bar';
 import { WebSafeArea } from '@/components/web-safe-area';
 import { APP_FONTS } from '@/components/text';
-import { autoBackup } from '@/lib/backup';
+import { autoBackup, keepWebDataSafe } from '@/lib/backup';
 import { autoCheckForUpdate } from '@/lib/updates';
 import { syncReminders } from '@/lib/reminders';
 import { DEFAULT_REMINDER, useGroups, useStore } from '@/store/store';
@@ -48,6 +48,7 @@ export default function RootLayout() {
   useEffect(() => {
     if (!dataReady) return;
     autoBackup();
+    keepWebDataSafe();
     // Once a day: is there a newer version on GitHub?
     autoCheckForUpdate();
     const sub = AppState.addEventListener('change', (s) => {

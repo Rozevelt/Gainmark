@@ -12,8 +12,10 @@ import { DEFAULT_BACKUP, getAppData, useStore, type AppData } from '@/store/stor
 
 const FORMAT_VERSION = 1;
 const MIME = 'application/json';
-/** How many backups are kept on the phone (oldest are removed). */
+/** How many daily backups are kept on the phone (oldest are removed). */
 const KEEP = 14;
+/** How many of the other kinds (manual, before an import or update) are kept. */
+const KEEP_OTHER = 5;
 
 type BackupFile = { app: 'gainmark'; version: number; exportedAt: string; data: AppData };
 
@@ -24,7 +26,7 @@ export type StoredBackup = {
   file: File;
   /** When it was made (ms). */
   time: number;
-  kind: 'daily' | 'manual' | 'before-import';
+  kind: 'daily' | 'manual' | 'before-import' | 'before-update';
 };
 
 function toJson(): string {
@@ -200,6 +202,7 @@ function backupDir(): Directory {
 
 function kindOf(name: string): StoredBackup['kind'] {
   if (name.includes('before-import')) return 'before-import';
+  if (name.includes('before-update')) return 'before-update';
   if (name.includes('manual')) return 'manual';
   return 'daily';
 }
@@ -232,9 +235,15 @@ export async function writeBackup(kind: StoredBackup['kind']): Promise<void> {
   if (file.exists) file.delete();
   file.create();
   await file.write(toJson());
-  for (const old of listBackups().slice(KEEP)) {
+  // Daily backups can't push out the ones made before an import or update, and the other way round.
+  const all = listBackups();
+  const old = [
+    ...all.filter((b) => b.kind === 'daily').slice(KEEP),
+    ...all.filter((b) => b.kind !== 'daily').slice(KEEP_OTHER),
+  ];
+  for (const b of old) {
     try {
-      old.file.delete();
+      b.file.delete();
     } catch {}
   }
 }
@@ -245,6 +254,30 @@ export async function readBackup(b: StoredBackup): Promise<AppData> {
 
 export function deleteBackup(b: StoredBackup) {
   b.file.delete();
+}
+
+/**
+ * Right before installing an update: a backup of everything, kept whether or not daily backups are on,
+ * so a problem in the new version can always be undone from Settings → Backups. Never throws.
+ */
+export async function backupBeforeUpdate(): Promise<void> {
+  if (Platform.OS === 'web') return;
+  try {
+    if (summarize(getAppData()).workouts > 0) await writeBackup('before-update');
+  } catch (e) {
+    console.warn('Backup before update failed', e);
+  }
+}
+
+/**
+ * Web app: ask the browser to keep Gainmark's data even when the device runs low on space
+ * (otherwise it may clear the storage of sites it thinks are unused). Never throws.
+ */
+export function keepWebDataSafe(): void {
+  if (Platform.OS !== 'web' || typeof navigator === 'undefined') return;
+  try {
+    navigator.storage?.persist?.().catch(() => {});
+  } catch {}
 }
 
 /** The daily backup, when it's on and there's something to back up. Never throws. */

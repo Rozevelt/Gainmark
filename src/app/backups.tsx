@@ -26,6 +26,7 @@ const KIND_LABEL: Record<StoredBackup['kind'], string> = {
   daily: 'Daily backup',
   manual: 'Backed up by you',
   'before-import': 'Before an import',
+  'before-update': 'Before an update',
 };
 
 export default function BackupsScreen() {
@@ -117,7 +118,11 @@ export default function BackupsScreen() {
                     i > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.border },
                     pressed && { backgroundColor: c.surface2 },
                   ]}>
-                  <Icon name={b.kind === 'before-import' ? 'reset' : 'history'} size={20} color={c.textDim} />
+                  <Icon
+                    name={b.kind === 'before-import' || b.kind === 'before-update' ? 'reset' : 'history'}
+                    size={20}
+                    color={c.textDim}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={[styles.rowTitle, { color: c.text }]}>{backupTime(b.time)}</Text>
                     <Text style={[styles.note, { color: c.textDim }]}>{KIND_LABEL[b.kind]}</Text>
@@ -132,8 +137,7 @@ export default function BackupsScreen() {
         </View>
 
         <Text style={[styles.note, { color: c.textFaint, textAlign: 'center' }]}>
-          Backups are deleted if you uninstall Gainmark. To keep a copy somewhere else, use Export data in
-          Settings.
+          Backups are deleted if you uninstall Gainmark. To keep a copy somewhere else, use Export data in Settings.
         </Text>
       </ScrollView>
     </View>
