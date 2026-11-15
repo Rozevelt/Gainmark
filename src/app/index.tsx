@@ -2,7 +2,6 @@ import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
-  Image,
   KeyboardAvoidingView,
   Pressable,
   ScrollView,
@@ -17,7 +16,9 @@ import { Text } from '@/components/text';
 import { ExerciseCard } from '@/components/exercise-card';
 import { DraggableList } from '@/components/draggable-list';
 import { REST_BAR_HEIGHT, RestTimerBar } from '@/components/rest-timer-bar';
+import { BrandLogo } from '@/components/celebration';
 import { showProgressed } from '@/components/toast';
+import { offerUndo } from '@/components/undo-bar';
 import { useWebSwipe, webSwipe } from '@/lib/web-swipe';
 import { WarmupCard } from '@/components/warmup-card';
 import { WorkoutTimer } from '@/components/workout-timer';
@@ -114,7 +115,7 @@ export default function DayScreen() {
       <ScreenHeader
         left={
           <View style={styles.brand}>
-            <Image source={require('@/assets/images/icon.png')} style={styles.logo} />
+            <BrandLogo style={styles.logo} />
             <Text style={[styles.brandText, { color: c.text }]}>Gainmark</Text>
           </View>
         }
@@ -387,7 +388,13 @@ function DayPage({
                   'Delete workout?',
                   `All ${entries.length} ${entries.length === 1 ? 'move' : 'moves'} and their sets on this day will be deleted, along with its workout time.`,
                   'Delete',
-                  () => deleteDay(date),
+                  () => {
+                    const { days: all, sessions, restoreDay } = useStore.getState();
+                    const before = all[date] ?? [];
+                    const session = sessions[date];
+                    deleteDay(date);
+                    offerUndo('Workout deleted', () => restoreDay(date, before, session));
+                  },
                 )
               }
             />

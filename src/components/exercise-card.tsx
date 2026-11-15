@@ -8,9 +8,10 @@ import { Icon } from '@/components/icon';
 import { Stepper, tick } from '@/components/stepper';
 import { Text } from '@/components/text';
 import { celebratePR } from '@/components/toast';
+import { offerUndo } from '@/components/undo-bar';
 import { IconButton } from '@/components/ui';
 import type { Exercise, MoveKind } from '@/data/exercises';
-import { confirmAction } from '@/lib/confirm';
+
 import { best1RM, bestScored, fmt, isCounted, plateMath, plateText, setScore } from '@/lib/stats';
 import {
   DEFAULT_DISPLAY,
@@ -179,11 +180,14 @@ export function ExerciseCard({
               size={20}
               color={c.textFaint}
               label={`Remove ${name}`}
-              onPress={() =>
-                confirmAction('Remove move?', `${name} and its sets will be removed from this day.`, 'Remove', () =>
-                  removeEntry(date, entry.id),
-                )
-              }
+              // Removed straight away; Undo puts it back.
+              onPress={() => {
+                const { days, sessions, restoreDay } = useStore.getState();
+                const before = days[date] ?? [];
+                const session = sessions[date];
+                removeEntry(date, entry.id);
+                offerUndo(`${name} removed`, () => restoreDay(date, before, session));
+              }}
             />
           </View>
         )}
@@ -362,6 +366,9 @@ function SetRow({
     else improved = w > pw || (w === pw && set.reps > prev.reps);
   }
   const valueColor = improved ? c.success : c.text;
+  // Values raised by auto progression keep their own colour until you change them.
+  const weightColor = set.auto?.weight ? c.progress : valueColor;
+  const repsColor = set.auto?.reps ? c.progress : valueColor;
   const step = WEIGHT_STEP[unit];
   const plateSizes = usePlates();
   // "20 + 5 per side" under each set: only when turned on in Settings.
@@ -446,7 +453,7 @@ function SetRow({
               value={set.weight}
               decimal
               placeholder={prev?.weight != null ? formatWeight(prev.weight) : '0'}
-              color={valueColor}
+              color={weightColor}
               label={kind === 'bodyweight' ? 'added weight' : 'weight'}
               onChange={(weight) => updateSet(date, entryId, set.id, { weight })}
               // Bodyweight moves can go below zero for assisted reps.
@@ -467,7 +474,7 @@ function SetRow({
               style={styles.colReps}
               value={set.reps}
               placeholder={prev?.reps != null ? String(prev.reps) : '0'}
-              color={valueColor}
+              color={repsColor}
               label="reps"
               onChange={(reps) => updateSet(date, entryId, set.id, { reps })}
               onStep={(dir) => stepSet(date, entryId, set.id, 'reps', dir, prev?.reps ?? null)}

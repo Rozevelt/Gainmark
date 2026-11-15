@@ -13,6 +13,7 @@ export default function TimerSettings() {
   const setTimerSettings = useStore((s) => s.setTimerSettings);
   const setRestSettings = useStore((s) => s.setRestSettings);
   const liveTimer = useStore((s) => s.settings.liveTimer ?? true);
+  const keepAwake = useStore((s) => s.settings.keepAwake ?? true);
   const setSettingsFlags = useStore((s) => s.setSettingsFlags);
 
   return (
@@ -20,6 +21,9 @@ export default function TimerSettings() {
       <Section title="WORKOUT TIMER">
         <Row label="Show workout timer">
           <Toggle value={timer.enabled} onValueChange={(enabled) => setTimerSettings({ enabled })} />
+        </Row>
+        <Row label="Keep screen on" sub="While the workout timer runs">
+          <Toggle value={keepAwake} onValueChange={(on) => setSettingsFlags({ keepAwake: on })} />
         </Row>
         <Row label="Start on first checked set" last>
           <Toggle

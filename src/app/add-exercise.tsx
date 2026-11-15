@@ -5,10 +5,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text, TextInput } from '@/components/text';
 import { Icon } from '@/components/icon';
+import { tick } from '@/components/stepper';
 import { Button, Chip, IconButton, ScreenHeader, webNoOutline } from '@/components/ui';
 import { MOVE_KINDS } from '@/data/exercises';
 import { shortLabel, todayKey } from '@/lib/dates';
-import { useDay, useExercises, useGroups, useStore } from '@/store/store';
+import { useDay, useExercises, useGroups, useSortedDates, useStore } from '@/store/store';
 import { radius, useColors } from '@/theme';
 
 export default function AddExerciseScreen() {
@@ -33,6 +34,10 @@ export default function AddExerciseScreen() {
     if (added.length) setSelected((cur) => [...cur, ...added]);
   }
 
+  const exerciseSettings = useStore((s) => s.exerciseSettings);
+  const toggleFavorite = useStore((s) => s.toggleFavorite);
+  const days = useStore((s) => s.days);
+  const sortedDates = useSortedDates();
   const inWorkout = useMemo(() => new Set(dayEntries.map((e) => e.exerciseId)), [dayEntries]);
 
   const sections = useMemo(() => {
@@ -40,17 +45,48 @@ export default function AddExerciseScreen() {
     const matches = all.filter(
       (e) =>
         (groupFilter === 'all' || e.group === groupFilter) &&
-        (!q ||
-          e.name.toLowerCase().includes(q) ||
-          (groupById.get(e.group)?.name.toLowerCase().includes(q) ?? false)),
+        (!q || e.name.toLowerCase().includes(q) || (groupById.get(e.group)?.name.toLowerCase().includes(q) ?? false)),
     );
-    return groups
-      .map((g) => ({ group: g, data: matches.filter((e) => e.group === g.id) }))
+    const byGroup = groups
+      .map((g) => ({
+        key: g.id,
+        title: g.name,
+        color: g.color as string | undefined,
+        data: matches.map((e) => ({ ...e, rowKey: e.id })),
+      }))
+      .map((s) => ({ ...s, data: s.data.filter((e) => e.group === s.key) }))
       .filter((s) => s.data.length > 0);
-  }, [all, query, groupFilter, groups, groupById]);
+    // Without a search or group filter, starred and recently used moves come first.
+    if (q || groupFilter !== 'all') return byGroup;
+    const byId = new Map(all.map((e) => [e.id, e]));
+    const favorites = all.filter((e) => exerciseSettings[e.id]?.favorite);
+    const favIds = new Set(favorites.map((e) => e.id));
+    const recent: typeof all = [];
+    for (const d of [...sortedDates].reverse()) {
+      for (const entry of days[d] ?? []) {
+        const ex = byId.get(entry.exerciseId);
+        if (ex && !favIds.has(ex.id) && !recent.includes(ex)) recent.push(ex);
+      }
+      if (recent.length >= RECENT_COUNT) break;
+    }
+    const top = [
+      {
+        key: 'favorites',
+        title: 'Favourites',
+        color: undefined,
+        data: favorites.map((e) => ({ ...e, rowKey: `fav-${e.id}` })),
+      },
+      {
+        key: 'recent',
+        title: 'Recent',
+        color: undefined,
+        data: recent.slice(0, RECENT_COUNT).map((e) => ({ ...e, rowKey: `recent-${e.id}` })),
+      },
+    ].filter((s) => s.data.length > 0);
+    return [...top, ...byGroup];
+  }, [all, query, groupFilter, groups, groupById, exerciseSettings, sortedDates, days]);
 
-  const toggle = (id: string) =>
-    setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
+  const toggle = (id: string) => setSelected((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id]));
 
   // Long-press a move to open its settings (group, bar, delete).
   const onLongPress = (id: string) => router.push({ pathname: '/move/[id]', params: { id } });
@@ -82,7 +118,9 @@ export default function AddExerciseScreen() {
             autoCorrect={false}
             returnKeyType="search"
           />
-          {query ? <IconButton name="close" size={18} color={c.textFaint} label="Clear search" onPress={() => setQuery('')} /> : null}
+          {query ? (
+            <IconButton name="close" size={18} color={c.textFaint} label="Clear search" onPress={() => setQuery('')} />
+          ) : null}
         </View>
       </View>
 
@@ -109,7 +147,7 @@ export default function AddExerciseScreen() {
 
       <SectionList
         sections={sections}
-        keyExtractor={(e) => e.id}
+        keyExtractor={(e) => e.rowKey}
         keyboardShouldPersistTaps="handled"
         keyboardDismissMode="on-drag"
         stickySectionHeadersEnabled
@@ -118,8 +156,12 @@ export default function AddExerciseScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + (selected.length ? 96 : 24) }}
         renderSectionHeader={({ section }) => (
           <View style={[styles.sectionHeaderRow, { backgroundColor: c.bg }]}>
-            <View style={[styles.sectionDot, { backgroundColor: section.group.color }]} />
-            <Text style={[styles.sectionHeader, { color: c.textDim }]}>{section.group.name.toUpperCase()}</Text>
+            {section.color ? (
+              <View style={[styles.sectionDot, { backgroundColor: section.color }]} />
+            ) : (
+              <Icon name={section.key === 'favorites' ? 'star' : 'history'} size={13} color={c.textDim} />
+            )}
+            <Text style={[styles.sectionHeader, { color: c.textDim }]}>{section.title.toUpperCase()}</Text>
           </View>
         )}
         renderItem={({ item }) => {
@@ -151,12 +193,22 @@ export default function AddExerciseScreen() {
                   ) : null}
                 </View>
               </View>
+              {/* Star: starred moves are listed first. */}
+              <Pressable
+                onPress={() => {
+                  tick();
+                  toggleFavorite(item.id);
+                }}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel={exerciseSettings[item.id]?.favorite ? `Unstar ${item.name}` : `Star ${item.name}`}
+                style={styles.star}>
+                <Icon name="star" size={20} color={exerciseSettings[item.id]?.favorite ? c.accent : c.border} />
+              </Pressable>
               <View
                 style={[
                   styles.check,
-                  isSelected
-                    ? { backgroundColor: c.accent, borderColor: c.accent }
-                    : { borderColor: c.textFaint },
+                  isSelected ? { backgroundColor: c.accent, borderColor: c.accent } : { borderColor: c.textFaint },
                 ]}>
                 {isSelected ? <Icon name="check" size={16} color={c.onAccent} /> : null}
               </View>
@@ -179,15 +231,19 @@ export default function AddExerciseScreen() {
         ListFooterComponent={
           sections.length ? (
             <Text style={[styles.footer, { color: c.textFaint }]}>
-              Can&apos;t find it? Tap New to add your own move. Long-press a move to change its group or bar,
-              or delete one of your own. Long-press a group to edit it.
+              Can&apos;t find it? Tap New to add your own move. Long-press a move to change its group or bar, or delete
+              one of your own. Long-press a group to edit it.
             </Text>
           ) : undefined
         }
       />
 
       {selected.length ? (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12, backgroundColor: c.bg, borderTopColor: c.border }]}>
+        <View
+          style={[
+            styles.bottomBar,
+            { paddingBottom: insets.bottom + 12, backgroundColor: c.bg, borderTopColor: c.border },
+          ]}>
           <Button
             title={`Add ${selected.length} ${selected.length === 1 ? 'move' : 'moves'}`}
             icon="check"
@@ -202,7 +258,11 @@ export default function AddExerciseScreen() {
   );
 }
 
+/** How many recently used moves are listed at the top. */
+const RECENT_COUNT = 8;
+
 const styles = StyleSheet.create({
+  star: { padding: 4 },
   searchWrap: { paddingHorizontal: 16, paddingBottom: 10 },
   search: {
     flexDirection: 'row',

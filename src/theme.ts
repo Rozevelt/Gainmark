@@ -17,6 +17,8 @@ const dark = {
   accentRow: '#2E3828',
   onAccent: '#111111',
   success: '#AEF77F',
+  /** Weights and reps set by auto progression. */
+  progress: '#6CC7FF',
   danger: '#FF5A5F',
 };
 
@@ -33,6 +35,7 @@ const light: typeof dark = {
   accentRow: '#E8F1E4',
   onAccent: '#FFFFFF',
   success: '#3D8C1A',
+  progress: '#0A6FC2',
   danger: '#E03A3E',
 };
 
@@ -88,6 +91,8 @@ export function palette(accentId: string, isDark: boolean): Colors {
           accentSoft: `rgba(${r},${g},${b},${soft})`,
           accentRow: mix(base.surface, accent, soft),
           success: accent,
+          // Next to a blue or aqua accent, progression shows in amber instead.
+          progress: a.id === 'blue' || a.id === 'aqua' ? (isDark ? '#FFC266' : '#A65F00') : base.progress,
         };
   cache.set(key, colors);
   return colors;

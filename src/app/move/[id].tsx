@@ -110,10 +110,23 @@ export default function MoveToolsScreen() {
   const oneRM = estimate1RM(calcWeight, calcReps);
   const record = allTime1RM(days, id);
 
-  const heaviest = Math.max(0, ...(entry?.sets ?? []).map((s) => s.weight ?? 0));
-  const [plateWeight, setPlateWeight] = useState<number | null>(
-    heaviest || (bar != null ? bar + 2 * (unit === 'kg' ? 20 : 45) : null),
-  );
+  // Plates for the set you're about to do: the first set not checked off yet (the last one
+  // once they're all done). Checking a set moves on to the next set's weight.
+  const loaded = (entry?.sets ?? []).map((s, i) => ({ s, i })).filter(({ s }) => (s.weight ?? 0) > 0);
+  const nextSet = loaded.find(({ s }) => !s.done) ?? loaded[loaded.length - 1];
+  const allDone = loaded.length > 0 && loaded.every(({ s }) => s.done);
+  const nextKey = nextSet ? `${nextSet.s.id}:${nextSet.s.weight}` : '';
+  // A weight typed here is used until the next set changes.
+  const [typed, setTyped] = useState<{ key: string; weight: number | null } | null>(null);
+  const ownWeight = typed != null && typed.key === nextKey;
+  const plateWeight = ownWeight
+    ? typed.weight
+    : (nextSet?.s.weight ?? (bar != null ? bar + 2 * (unit === 'kg' ? 20 : 45) : null));
+  const setPlateWeight = (weight: number | null) => setTyped({ key: nextKey, weight });
+  const plateLabel =
+    ownWeight || !nextSet
+      ? `TOTAL WEIGHT (${unit})`
+      : `SET ${nextSet.i + 1} OF ${entry?.sets.length ?? 0}${allDone ? ' · ALL DONE' : ''} (${unit})`;
   const defaultBar = exercise?.bar ? BAR_WEIGHT[exercise.bar][unit] : unit === 'kg' ? 20 : 45;
   const math = bar != null ? plateMath(plateWeight, bar, plateSizes) : null;
   const dayName = relativeLabel(date).toLowerCase() === 'today' ? 'today' : relativeLabel(date);
@@ -151,13 +164,13 @@ export default function MoveToolsScreen() {
               ) : (
                 <>
                   <View style={{ gap: 6 }}>
-                    <Text style={[styles.inputLabel, { color: c.textFaint }]}>TOTAL WEIGHT ({unit})</Text>
+                    <Text style={[styles.inputLabel, { color: c.textFaint }]}>{plateLabel}</Text>
                     <Stepper
                       value={plateWeight}
                       decimal
                       label="total weight"
                       onChange={setPlateWeight}
-                      onStep={(d) => setPlateWeight((w) => Math.max(0, (w ?? bar) + d * step))}
+                      onStep={(d) => setPlateWeight(Math.max(0, (plateWeight ?? bar) + d * step))}
                     />
                   </View>
                   <PlateBar math={math} unit={unit} />

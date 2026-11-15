@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Platform, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, Text as RNText, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Text } from '@/components/text';
@@ -101,16 +101,9 @@ export function Button({
   style?: StyleProp<ViewStyle>;
 }) {
   const c = useColors();
-  const bg =
-    variant === 'primary' ? c.accent : variant === 'secondary' ? c.surface2 : 'transparent';
+  const bg = variant === 'primary' ? c.accent : variant === 'secondary' ? c.surface2 : 'transparent';
   const fg =
-    variant === 'primary'
-      ? c.onAccent
-      : variant === 'danger'
-        ? c.danger
-        : variant === 'ghost'
-          ? c.accent
-          : c.text;
+    variant === 'primary' ? c.onAccent : variant === 'danger' ? c.danger : variant === 'ghost' ? c.accent : c.text;
   return (
     <Pressable
       onPress={onPress}
@@ -133,8 +126,11 @@ export function Chip({
   onPress,
   onLongPress,
   dotColor,
+  emoji,
 }: {
   label: string;
+  /** Shown before the label in the phone's own font: emoji inside the app font are measured too narrow on Android. */
+  emoji?: string;
   selected: boolean;
   onPress: () => void;
   onLongPress?: () => void;
@@ -158,6 +154,7 @@ export function Chip({
       accessibilityState={{ selected }}
       style={[styles.chip, colors, dotColor ? { borderWidth: selected ? 2 : 1 } : null]}>
       {dotColor ? <View style={[styles.chipDot, { backgroundColor: dotColor }]} /> : null}
+      {emoji ? <RNText style={styles.chipEmoji}>{emoji}</RNText> : null}
       <Text style={[styles.chipText, { color: textColor }, selected && dotColor ? { fontWeight: '800' } : null]}>
         {label}
       </Text>
@@ -208,4 +205,5 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   chipText: { fontSize: 14, fontWeight: '600' },
+  chipEmoji: { fontSize: 14, marginRight: -2 },
 });

@@ -15,12 +15,12 @@ import { Icon, type IconName } from '@/components/icon';
 import { Text } from '@/components/text';
 import { radius, useColors } from '@/theme';
 
-type Toast = { id: number; title: string; sub?: string; icon: IconName };
+type Toast = { id: number; title: string; sub?: string; icon: IconName | null };
 
 const useToast = create<{ toast: Toast | null }>(() => ({ toast: null }));
 
 /** A small note that slides in at the top for a moment, e.g. "New PR". */
-export function showToast(title: string, sub?: string, icon: IconName = 'check') {
+export function showToast(title: string, sub?: string, icon: IconName | null = 'check') {
   useToast.setState({ toast: { id: Date.now(), title, sub, icon } });
 }
 
@@ -62,7 +62,7 @@ export function ToastHost() {
   return (
     <View pointerEvents="none" style={[styles.wrap, { top: insets.top + 8 }]}>
       <Animated.View style={[styles.pill, { backgroundColor: c.surface2, borderColor: c.border }, style]}>
-        <Icon name={toast.icon} size={16} color={c.accent} />
+        {toast.icon ? <Icon name={toast.icon} size={16} color={c.accent} /> : null}
         <Text style={[styles.title, { color: c.accent }]}>{toast.title}</Text>
         {toast.sub ? (
           <Text style={[styles.sub, { color: c.text }]} numberOfLines={1}>

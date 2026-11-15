@@ -25,7 +25,19 @@ export type WorkoutSet = {
   /** Drop set: lighter weight × reps done straight after the set (checked together with it). */
   drops?: Drop[];
   done?: boolean;
+  /** Values set by auto progression (shown in their own colour until you change them). */
+  auto?: { weight?: boolean; reps?: boolean };
 };
+
+/** The set without the auto-progression mark on the fields that were just changed by hand. */
+function clearAuto(x: WorkoutSet, fields: string[]): WorkoutSet {
+  if (!x.auto) return x;
+  const auto = { ...x.auto };
+  for (const f of fields) delete auto[f as 'weight' | 'reps'];
+  if (auto.weight || auto.reps) return { ...x, auto };
+  const { auto: _unused, ...rest } = x;
+  return rest;
+}
 
 export type Drop = { weight: number | null; reps: number | null };
 /**
@@ -110,6 +122,10 @@ export type Settings = {
   progression?: ProgressionSettings;
   /** Live timer in the notification shade / lock screen. */
   liveTimer?: boolean;
+  /** Keep the screen on while a workout timer runs (on unless switched off). */
+  keepAwake?: boolean;
+  /** Holiday touches (Christmas, Halloween, Easter…) on the logo and when the app opens. */
+  celebrations?: boolean;
   /** The welcome screen has been seen. */
   onboarded?: boolean;
   /** Body measurement shown on the Body tab. */
@@ -141,9 +157,11 @@ type State = {
   /** Per-move overrides. `bar: null` means the move doesn't use a bar; `group` moves it to another group. */
   exerciseSettings: Record<
     string,
-    { bar?: number | null; group?: string; rest?: number; warmup?: boolean; kind?: MoveKind }
+    { bar?: number | null; group?: string; rest?: number; warmup?: boolean; kind?: MoveKind; favorite?: boolean }
   >;
   setExerciseKind: (exerciseId: string, kind: MoveKind) => void;
+  /** Star or unstar a move (starred moves are listed first in Add moves). */
+  toggleFavorite: (exerciseId: string) => void;
   /** Body weight by "YYYY-MM-DD", in the weight unit. */
   bodyweights: Record<string, number>;
   setBodyweight: (date: string, value: number | null) => void;
@@ -188,6 +206,8 @@ type State = {
   removeEntry: (date: string, entryId: string) => void;
   /** Delete a whole workout: every move on the day and its workout time. */
   deleteDay: (date: string) => void;
+  /** Put a day back as it was (Undo after removing a move or deleting the workout). */
+  restoreDay: (date: string, entries: Entry[], session: Session | undefined) => void;
   /** Put a day's moves in the given order (entry ids). */
   reorderEntries: (date: string, orderedIds: string[]) => void;
   addSet: (date: string, entryId: string) => void;
@@ -210,13 +230,15 @@ type State = {
   /** Copy a day's moves to another day (with auto progression, if on). Returns how many moves were progressed. */
   copyWorkout: (from: string, to: string, mode: 'append' | 'replace') => number;
   setProgression: (patch: Partial<ProgressionSettings>) => void;
-  setSettingsFlags: (patch: Partial<Pick<Settings, 'liveTimer' | 'onboarded' | 'measure'>>) => void;
+  setSettingsFlags: (patch: Partial<Pick<Settings, 'liveTimer' | 'onboarded' | 'measure' | 'keepAwake' | 'celebrations'>>) => void;
   /** Body measurements by date, then by measurement id (cm or inches, body fat in %). */
   measurements: Record<string, Record<string, number>>;
   setMeasurement: (date: string, key: string, value: number | null) => void;
   createExercise: (name: string, groupId: string, kind?: MoveKind) => Exercise;
   deleteExercise: (id: string) => void;
   setUnit: (unit: Unit) => void;
+  /** Switch kg ↔ lb and convert everything logged: weights, bars, body weight, measurements, distances. */
+  convertUnits: (to: Unit) => void;
   setPlates: (unit: Unit, plates: number[]) => void;
   setSplit: (split: Split) => void;
   /** `weekday` is a Date.getDay() index (0 = Sunday). */
@@ -527,6 +549,15 @@ export const useStore = create<State>()((set, get) => ({
       return { days: withDay(s.days, date, []), sessions };
     }),
 
+  restoreDay: (date, entries, session) =>
+    set((s) => {
+      const sessions = { ...s.sessions };
+      if (session) sessions[date] = session;
+      else delete sessions[date];
+      markDirty(SESSIONS_KEY);
+      return { days: withDay(s.days, date, entries), sessions };
+    }),
+
   reorderEntries: (date, orderedIds) =>
     set((s) => {
       const entries = s.days[date] ?? EMPTY;
@@ -595,7 +626,7 @@ export const useStore = create<State>()((set, get) => ({
         date,
         mapEntry(s.days[date] ?? EMPTY, entryId, (e) => ({
           ...e,
-          sets: e.sets.map((x) => (x.id === setId ? { ...x, ...patch } : x)),
+          sets: e.sets.map((x) => (x.id === setId ? clearAuto({ ...x, ...patch }, Object.keys(patch)) : x)),
         })),
       ),
     })),
@@ -636,7 +667,7 @@ export const useStore = create<State>()((set, get) => ({
           sets: e.sets.map((x) => {
             if (x.id !== setId) return x;
             const next = Math.max(min, Math.round(((x[field] ?? start ?? 0) + delta) * 100) / 100);
-            return { ...x, [field]: next };
+            return clearAuto({ ...x, [field]: next }, [field]);
           }),
         })),
       ),
@@ -699,7 +730,13 @@ export const useStore = create<State>()((set, get) => ({
         // Auto progression: weight and bodyweight moves only.
         const kind = kindOfId(s, e.exerciseId);
         if (kind === 'weight' || kind === 'bodyweight') {
-          const next = progressSets(sets, prog, step);
+          // Only sets checked as done last time move up.
+          const next = progressSets(
+            sets,
+            e.sets.map((x) => !!x.done),
+            prog,
+            step,
+          );
           if (next.changed) progressed += 1;
           sets = next.sets;
         }
@@ -926,6 +963,16 @@ export const useStore = create<State>()((set, get) => ({
       }),
     ),
 
+  toggleFavorite: (exerciseId) => {
+    set((s) => ({
+      exerciseSettings: {
+        ...s.exerciseSettings,
+        [exerciseId]: { ...s.exerciseSettings[exerciseId], favorite: !s.exerciseSettings[exerciseId]?.favorite },
+      },
+    }));
+    markDirty(EX_SETTINGS_KEY);
+  },
+
   setExerciseKind: (exerciseId, kind) => {
     set((s) => ({
       exerciseSettings: {
@@ -955,7 +1002,7 @@ export const useStore = create<State>()((set, get) => ({
     const clean = name.trim() || 'Workout';
     const entries: TemplateEntry[] = (get().days[date] ?? EMPTY).map((e) => ({
       exerciseId: e.exerciseId,
-      sets: e.sets.map(({ id: _id, done: _done, ...rest }) => rest),
+      sets: e.sets.map(({ id: _id, done: _done, auto: _auto, ...rest }) => rest),
       ...(e.superset ? { superset: e.superset } : null),
     }));
     const existing = get().templates.find((t) => t.name.toLowerCase() === clean.toLowerCase());
@@ -1107,6 +1154,77 @@ export const useStore = create<State>()((set, get) => ({
 
   setUnit: (unit) => {
     set((s) => ({ settings: { ...s.settings, unit } }));
+    markDirty(SETTINGS_KEY);
+  },
+
+  convertUnits: (to) => {
+    const s = get();
+    if (s.settings.unit === to) return;
+    const toLb = to === 'lb';
+    const KG_LB = 2.2046226;
+    const weightFactor = toLb ? KG_LB : 1 / KG_LB;
+    const lengthFactor = toLb ? 1 / 2.54 : 2.54; // cm ↔ in
+    const distanceFactor = toLb ? 0.621371 : 1 / 0.621371; // km ↔ mi
+    const round = (v: number, step: number) => Math.round(Math.round(v / step) * step * 100) / 100;
+    // Weights land on loadable steps: 0.5 lb or 0.25 kg.
+    const w = (v: number | null) => (v == null ? v : round(v * weightFactor, toLb ? 0.5 : 0.25));
+    const dist = (v: number | null | undefined) => (v == null ? v : round(v * distanceFactor, 0.01));
+    const convertSet = <T extends Omit<WorkoutSet, 'id'>>(x: T): T => ({
+      ...x,
+      weight: w(x.weight),
+      ...(x.distance != null ? { distance: dist(x.distance) } : null),
+      ...(x.drops?.length ? { drops: x.drops.map((d) => ({ ...d, weight: w(d.weight) })) } : null),
+    });
+
+    const days: Days = {};
+    for (const [date, entries] of Object.entries(s.days)) {
+      days[date] = entries.map((e) => ({ ...e, sets: e.sets.map(convertSet) }));
+      markDirty(DAY_PREFIX + date);
+    }
+    const bodyweights: Record<string, number> = {};
+    for (const [date, v] of Object.entries(s.bodyweights)) bodyweights[date] = round(v * weightFactor, 0.1);
+    const measurements: Record<string, Record<string, number>> = {};
+    for (const [date, m] of Object.entries(s.measurements)) {
+      measurements[date] = Object.fromEntries(
+        Object.entries(m).map(([k, v]) => [k, k === 'bodyfat' ? v : round(v * lengthFactor, 0.1)]),
+      );
+    }
+    // Standard bars map to their usual size in the other unit; anything else is converted.
+    const BARS: [number, number][] = [
+      [20, 45],
+      [15, 35],
+      [10, 25],
+      [25, 55],
+      [7, 15],
+      [4.5, 10],
+    ];
+    const bar = (v: number | null | undefined) => {
+      if (v == null) return v;
+      const hit = BARS.find(([kg, lb]) => (toLb ? kg : lb) === v);
+      return hit ? (toLb ? hit[1] : hit[0]) : w(v);
+    };
+    const exerciseSettings = Object.fromEntries(
+      Object.entries(s.exerciseSettings).map(([id, o]) => [id, o.bar != null ? { ...o, bar: bar(o.bar) } : o]),
+    );
+    const templates = s.templates.map((t) => ({
+      ...t,
+      entries: t.entries.map((e) => ({ ...e, sets: e.sets.map(convertSet) })),
+    }));
+    // The progression step goes back to the default for the new unit.
+    const progression = s.settings.progression ? { ...s.settings.progression, step: null } : undefined;
+
+    set({
+      days,
+      bodyweights,
+      measurements,
+      exerciseSettings,
+      templates,
+      settings: { ...s.settings, unit: to, ...(progression ? { progression } : null) },
+    });
+    markDirty(BODYWEIGHT_KEY);
+    markDirty(MEASUREMENTS_KEY);
+    markDirty(EX_SETTINGS_KEY);
+    markDirty(TEMPLATES_KEY);
     markDirty(SETTINGS_KEY);
   },
 }));

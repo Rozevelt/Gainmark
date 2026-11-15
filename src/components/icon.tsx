@@ -28,6 +28,7 @@ const ICONS = {
   history: { ios: 'clock.arrow.circlepath', android: 'history' },
   up: { ios: 'arrow.up', android: 'arrow_upward' },
   link: { ios: 'link', android: 'link' },
+  star: { ios: 'star.fill', android: 'star' },
   brush: { ios: 'paintbrush', android: 'brush' },
   bookmark: { ios: 'bookmark', android: 'bookmark' },
   cards: { ios: 'rectangle.stack', android: 'view_agenda' },

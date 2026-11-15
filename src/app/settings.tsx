@@ -70,6 +70,16 @@ export default function SettingsScreen() {
         />
       </Section>
 
+      <Section>
+        <NavRow
+          icon="share"
+          label="Share Gainmark"
+          sub="QR code for a friend's iPhone or Android"
+          onPress={() => router.push('/share')}
+          last
+        />
+      </Section>
+
       <Section title="ABOUT">
         <Row label="Gainmark" value={`v${appVersion()}`} />
         {/* The web app is always the newest version; the Android app checks GitHub. */}

@@ -6,6 +6,7 @@ import { Text } from '@/components/text';
 import { Chip } from '@/components/ui';
 import { WEEK_ORDER } from '@/data/splits';
 import { DEFAULT_PROGRESSION, PROGRESSION_STEPS, PROGRESSION_STYLES, progressionStep } from '@/lib/progression';
+import { choose } from '@/lib/confirm';
 import { ALL_PLATES } from '@/lib/stats';
 import { useGoal, usePlates, useStore, type Unit } from '@/store/store';
 import { useColors } from '@/theme';
@@ -15,6 +16,23 @@ export default function WorkoutSettings() {
   const c = useColors();
   const unit = useStore((s) => s.settings.unit);
   const setUnit = useStore((s) => s.setUnit);
+  const convertUnits = useStore((s) => s.convertUnits);
+  const hasData = useStore((s) => Object.keys(s.days).length > 0 || Object.keys(s.bodyweights).length > 0);
+  // With workouts logged, ask whether to convert them too (100 kg → 220.5 lb) or only change the label.
+  const switchUnit = (u: Unit) => {
+    if (u === unit) return;
+    if (!hasData) return setUnit(u);
+    const example = u === 'lb' ? '100 kg becomes 220.5 lb' : '225 lb becomes 102 kg';
+    choose(
+      `Switch to ${u}?`,
+      `Convert everything you've logged to ${u}? ${example}, and bars, body weight, measurements and distances change too. "Only the unit" keeps the numbers as they are.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Only the unit', onPress: () => setUnit(u) },
+        { text: 'Convert', onPress: () => convertUnits(u) },
+      ],
+    );
+  };
   const goal = useGoal();
   const setGoal = useStore((s) => s.setGoal);
   const split = useStore((s) => s.settings.split);
@@ -37,7 +55,7 @@ export default function WorkoutSettings() {
             {(['kg', 'lb'] as Unit[]).map((u) => (
               <Pressable
                 key={u}
-                onPress={() => setUnit(u)}
+                onPress={() => switchUnit(u)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: unit === u }}
                 style={[settingsStyles.segmentItem, unit === u && { backgroundColor: c.accent }]}>
@@ -74,7 +92,8 @@ export default function WorkoutSettings() {
       <Section title="AUTO PROGRESSION">
         <View style={settingsStyles.box}>
           <Text style={[settingsStyles.note, { color: c.textDim }]}>
-            When you copy a past workout, the weights and reps move up for you. For weight and bodyweight moves.
+            When you copy a past workout, the weights and reps move up for you, for the sets you checked as done.
+            Changed values show in blue (amber with a blue accent) until you edit them. For weight and bodyweight moves.
           </Text>
           <View style={styles.chips}>
             {PROGRESSION_STYLES.map((p) => (

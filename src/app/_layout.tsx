@@ -9,8 +9,10 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DialogHost } from '@/components/dialog-host';
 import { InstallGate, needsInstall } from '@/components/install-gate';
+import { KeepAwakeHost } from '@/components/keep-awake-host';
 import { LiveTimerHost } from '@/components/live-timer-host';
 import { ToastHost } from '@/components/toast';
+import { UndoBar } from '@/components/undo-bar';
 import { WebSafeArea } from '@/components/web-safe-area';
 import { APP_FONTS } from '@/components/text';
 import { autoBackup } from '@/lib/backup';
@@ -108,6 +110,8 @@ export default function RootLayout() {
           <DialogHost />
           <ToastHost />
           <LiveTimerHost />
+          <KeepAwakeHost />
+          <UndoBar />
         </ThemeProvider>
       </GestureHandlerRootView>
     </WebSafeArea>

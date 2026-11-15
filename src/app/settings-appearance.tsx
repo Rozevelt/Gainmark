@@ -3,6 +3,9 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { Icon } from '@/components/icon';
 import { Row, Section, SettingsPage, settingsStyles } from '@/components/settings-ui';
 import { Text } from '@/components/text';
+import { Toggle } from '@/components/toggle';
+import { Chip } from '@/components/ui';
+import { CELEBRATIONS, useCelebrationPreview } from '@/lib/celebrations';
 import { DEFAULT_THEME, useStore, type ThemeSettings } from '@/store/store';
 import { ACCENTS, palette, radius, useColors, useIsDark } from '@/theme';
 
@@ -18,6 +21,9 @@ export default function AppearanceSettings() {
   const isDark = useIsDark();
   const theme = useStore((s) => s.settings.theme) ?? DEFAULT_THEME;
   const setTheme = useStore((s) => s.setTheme);
+  const celebrations = useStore((s) => s.settings.celebrations ?? true);
+  const setSettingsFlags = useStore((s) => s.setSettingsFlags);
+  const preview = useCelebrationPreview((s) => s.preview);
 
   return (
     <SettingsPage title="Appearance">
@@ -65,6 +71,29 @@ export default function AppearanceSettings() {
         </View>
       </Section>
 
+      <Section title="HOLIDAYS">
+        <Row label="Holiday touches" sub="Christmas, New Year, Valentine's, Easter, Midsummer, Halloween">
+          <Toggle value={celebrations} onValueChange={(on) => setSettingsFlags({ celebrations: on })} />
+        </Row>
+        <View style={settingsStyles.box}>
+          <Text style={[settingsStyles.note, { color: c.textDim }]}>
+            On a holiday the logo at the top left gets a holiday look. Tap one to preview it around the app, and tap it
+            again to stop:
+          </Text>
+          <View style={styles.previewChips}>
+            {Object.values(CELEBRATIONS).map((h) => (
+              <Chip
+                key={h.id}
+                emoji={h.emoji}
+                label={h.name}
+                selected={preview === h.id}
+                onPress={() => useCelebrationPreview.setState({ preview: preview === h.id ? null : h.id })}
+              />
+            ))}
+          </View>
+        </View>
+      </Section>
+
       {/* A small preview of the accent on a set row. */}
       <Section title="PREVIEW">
         <View style={[settingsStyles.box, styles.preview]}>
@@ -92,6 +121,7 @@ export default function AppearanceSettings() {
 }
 
 const styles = StyleSheet.create({
+  previewChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modeItem: { paddingHorizontal: 12, height: 32, borderRadius: 6, justifyContent: 'center' },
   swatches: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', rowGap: 14 },
   swatchItem: { width: '25%', alignItems: 'center', gap: 6 },
